@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview — {{ agent.name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Inter',sans-serif;background:#0a0a0f;color:#f1f5f9;min-height:100vh;
+         display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;}
+    .preview-card{background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:16px;
+                  padding:3rem 2rem;text-align:center;max-width:480px;width:100%;}
+    .preview-avatar{font-size:3rem;margin-bottom:1rem;}
+    h1{font-size:1.5rem;font-weight:800;margin-bottom:0.5rem;}
+    p{color:#6b7280;font-size:0.9rem;line-height:1.6;margin-bottom:1.5rem;}
+    .preview-hint{background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);
+                  border-radius:8px;padding:12px;font-size:0.83rem;color:#818cf8;margin-bottom:2rem;}
+    .back-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;
+              background:#6366f1;color:#fff;border-radius:8px;font-size:0.88rem;font-weight:600;
+              text-decoration:none;transition:background 0.15s;}
+    .back-btn:hover{background:#5254cc;}
+  </style>
+</head>
+<body>
+  <div class="preview-card">
+    <div class="preview-avatar">{{ agent.avatar }}</div>
+    <h1>{{ agent.name }}</h1>
+    <p>{{ agent.tagline }}</p>
+    <div class="preview-hint">
+      👇 Click the chat bubble in the bottom right to try your agent live!
+    </div>
+    <a href="javascript:history.back()" class="back-btn">← Back to Dashboard</a>
+  </div>
+
+  <script src="{{ request.host_url }}widget/{{ agent.id }}.js"></script>
+</body>
+</html>

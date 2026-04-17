@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if agent else 'New' }} Agent — Alexander AI Agent{% endblock %}
+{% block content %}
+<style>
+  .color-preview{width:36px;height:36px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);
+                 display:inline-block;vertical-align:middle;margin-left:10px;}
+  .hint{font-size:0.78rem;color:#6b7280;margin-top:4px;}
+  .models{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:6px;}
+  .model-opt{background:#1f2937;border:1.5px solid rgba(255,255,255,0.1);border-radius:8px;
+             padding:10px 12px;cursor:pointer;transition:border-color 0.2s;}
+  .model-opt:hover,.model-opt.selected{border-color:#6366f1;}
+  .model-opt input{display:none;}
+  .model-name{font-weight:600;font-size:0.88rem;}
+  .model-desc{font-size:0.76rem;color:#6b7280;margin-top:2px;}
+</style>
+<div class="container-sm" style="padding-top:2rem;max-width:680px;">
+  <div style="margin-bottom:1.5rem;">
+    <a href="/dashboard" style="color:#6b7280;font-size:0.88rem;">← Back to dashboard</a>
+    <h1 style="font-size:1.5rem;font-weight:800;margin-top:0.5rem;">
+      {{ 'Edit Agent' if agent else 'Create New Agent' }}
+    </h1>
+  </div>
+  <form method="POST">
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h3 style="font-weight:700;margin-bottom:1rem;font-size:0.95rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">Identity</h3>
+      <div class="form-group">
+        <label>Agent Name *</label>
+        <input type="text" name="name" value="{{ agent.name if agent else '' }}" placeholder="e.g. Aria, SupportBot, Sales Assistant" required maxlength="50">
+      </div>
+      <div class="form-group">
+        <label>Tagline</label>
+        <input type="text" name="tagline" value="{{ agent.tagline if agent else 'Ask me anything!' }}" placeholder="Ask me anything!" maxlength="100">
+        <p class="hint">Shows under the agent name in the chat header.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="form-group">
+          <label>Brand Color</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <input type="color" name="color" value="{{ agent.color if agent else '#6366f1' }}"
+                   style="width:52px;height:38px;padding:2px;cursor:pointer;" id="colorPicker">
+            <span id="colorHex" style="font-family:monospace;color:#94a3b8;">{{ agent.color if agent else '#6366f1' }}</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Avatar Emoji</label>
+          <input type="text" name="avatar" value="{{ agent.avatar if agent else '🤖' }}" placeholder="🤖" maxlength="4">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h3 style="font-weight:700;margin-bottom:1rem;font-size:0.95rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">Behavior</h3>
+      <div class="form-group">
+        <label>System Prompt *</label>
+        <textarea name="system_prompt" rows="5" placeholder="You are a helpful customer support assistant for Acme Inc. Be friendly, concise, and always offer to help further.">{{ agent.system_prompt if agent else 'You are a helpful AI assistant.' }}</textarea>
+        <p class="hint">This is the secret instruction that shapes your agent's personality and knowledge.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h3 style="font-weight:700;margin-bottom:1rem;font-size:0.95rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">AI Model</h3>
+      <div class="models">
+        {% for model_id, model_name, model_desc in [
+          ('openai/gpt-4o-mini', 'GPT-4o Mini', 'Fast & affordable. Great for most uses.'),
+          ('openai/gpt-4o', 'GPT-4o', 'Most capable OpenAI model.'),
+          ('anthropic/claude-3-haiku', 'Claude 3 Haiku', 'Fast, smart, great writing.'),
+          ('anthropic/claude-3.5-sonnet', 'Claude 3.5 Sonnet', 'Anthropic\'s best model.'),
+          ('google/gemini-flash-1.5', 'Gemini Flash', 'Fast Google model.'),
+          ('meta-llama/llama-3.1-8b-instruct:free', 'Llama 3.1 8B', 'Free tier model.')
+        ] %}
+        <label class="model-opt {{ 'selected' if (agent and agent.model == model_id) or (not agent and model_id == 'openai/gpt-4o-mini') else '' }}">
+          <input type="radio" name="model" value="{{ model_id }}"
+            {{ 'checked' if (agent and agent.model == model_id) or (not agent and model_id == 'openai/gpt-4o-mini') else '' }}>
+          <div class="model-name">{{ model_name }}</div>
+          <div class="model-desc">{{ model_desc }}</div>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+      <h3 style="font-weight:700;margin-bottom:1rem;font-size:0.95rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">API & Security</h3>
+      <div class="form-group">
+        <label>OpenRouter API Key *</label>
+        <div class="eye-wrap">
+          <input type="password" name="api_key" placeholder="{{ '••••••••••••••••' if agent else 'sk-or-...' }}" {{ 'required' if not agent else '' }}>
+          <button type="button" class="eye-btn">👁️</button>
+        </div>
+        <p class="hint">Get yours at <a href="https://openrouter.ai/keys" target="_blank" style="color:#6366f1;">openrouter.ai/keys</a>. Stored encrypted.</p>
+      </div>
+      <div class="form-group">
+        <label>Allowed Origins (CORS)</label>
+        <input type="text" name="allowed_origins" value="{{ agent.allowed_origins if agent else '*' }}" placeholder="* or https://yoursite.com">
+        <p class="hint">Use <code>*</code> for any site, or enter your domain for security.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <a href="/dashboard" class="btn btn-outline">Cancel</a>
+      <button type="submit" class="btn btn-primary">
+        {{ '💾 Save Changes' if agent else '🚀 Create Agent' }}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// Color picker sync
+var cp=document.getElementById('colorPicker');
+var hex=document.getElementById('colorHex');
+if(cp&&hex){cp.addEventListener('input',function(){hex.textContent=this.value;});}
+// Model card selection highlight
+document.querySelectorAll('.model-opt input').forEach(function(r){
+  r.addEventListener('change',function(){
+    document.querySelectorAll('.model-opt').forEach(function(el){el.classList.remove('selected');});
+    r.closest('.model-opt').classList.add('selected');
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} — Alexander AI Agent{% endblock %}
+{% block content %}
+<style>
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;}
+  @media(max-width:700px){.detail-grid{grid-template-columns:1fr;}}
+  .embed-box{background:#0d1117;border:1px solid rgba(99,102,241,0.3);border-radius:10px;
+             padding:1rem 1.25rem;font-family:monospace;font-size:0.85rem;color:#818cf8;
+             word-break:break-all;line-height:1.6;}
+  .copy-btn{margin-top:8px;font-size:0.82rem;}
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;}
+  .stat{background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:1rem;text-align:center;}
+  .stat-val{font-size:1.5rem;font-weight:800;color:#6366f1;}
+  .stat-label{font-size:0.78rem;color:#6b7280;margin-top:2px;}
+</style>
+<div class="container">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:56px;height:56px;border-radius:50%;background:{{ agent.color }}20;
+                  display:flex;align-items:center;justify-content:center;font-size:26px;">{{ agent.avatar }}</div>
+      <div>
+        <h1 style="font-size:1.5rem;font-weight:800;">{{ agent.name }}</h1>
+        <p style="color:#6b7280;font-size:0.88rem;">{{ agent.tagline }}</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="/preview/{{ agent.id }}" class="btn btn-outline btn-sm" target="_blank">👁 Preview</a>
+      <a href="/agent/{{ agent.id }}/analytics" class="btn btn-outline btn-sm">📊 Analytics</a>
+      <a href="/agent/{{ agent.id }}/edit" class="btn btn-primary btn-sm">✏️ Edit</a>
+      <form method="POST" action="/agent/{{ agent.id }}/delete" style="display:inline;"
+            onsubmit="return confirm('Delete this agent? This cannot be undone.')">
+        <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat">
+      <div class="stat-val">{{ agent.msg_count }}</div>
+      <div class="stat-label">Total Messages</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" style="font-size:1rem;color:#10b981;">{{ agent.model.split('/')[-1] }}</div>
+      <div class="stat-label">AI Model</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" style="font-size:0.9rem;">{{ agent.created[:10] }}</div>
+      <div class="stat-label">Created</div>
+    </div>
+  </div>
+
+  <div class="detail-grid">
+    <div class="card">
+      <h2 style="font-size:1rem;font-weight:700;margin-bottom:1rem;">🔌 Embed Code</h2>
+      <p style="color:#6b7280;font-size:0.85rem;margin-bottom:0.75rem;">
+        Paste this <strong>one line</strong> before <code>&lt;/body&gt;</code> on any page.
+      </p>
+      <div class="embed-box" id="embedCode">
+        &lt;script src="{{ base_url }}/widget/{{ agent.id }}.js"&gt;&lt;/script&gt;
+      </div>
+      <button class="btn btn-outline btn-sm copy-btn" onclick="copyEmbed()">📋 Copy Embed Code</button>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1rem;font-weight:700;margin-bottom:1rem;">⚙️ Configuration</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:0.88rem;">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:#6b7280;">Color</span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <span style="width:16px;height:16px;border-radius:50%;background:{{ agent.color }};display:inline-block;"></span>
+            {{ agent.color }}
+          </span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:#6b7280;">Avatar</span>
+          <span>{{ agent.avatar }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:#6b7280;">Model</span>
+          <span>{{ agent.model }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:#6b7280;">Allowed Origins</span>
+          <span>{{ agent.allowed_origins }}</span>
+        </div>
+        <hr style="border-color:rgba(255,255,255,0.08);">
+        <div>
+          <span style="color:#6b7280;display:block;margin-bottom:4px;">System Prompt</span>
+          <span style="font-size:0.82rem;color:#94a3b8;line-height:1.5;">{{ agent.system_prompt[:200] }}{{ '…' if agent.system_prompt|length > 200 else '' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem;">
+    <h2 style="font-size:1rem;font-weight:700;margin-bottom:0.75rem;">🔗 Direct API Endpoint</h2>
+    <p style="color:#6b7280;font-size:0.85rem;margin-bottom:0.75rem;">POST to this URL to chat programmatically.</p>
+    <div class="embed-box">
+      POST {{ base_url }}/chat/{{ agent.id }}<br>
+      Content-Type: application/json<br>
+      {"message": "Hello!", "history": [], "session_id": "user-123"}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function copyEmbed(){
+  var code = '<script src="{{ base_url }}/widget/{{ agent.id }}.js"><\/script>';
+  navigator.clipboard.writeText(code).then(function(){
+    var btn = document.querySelector('.copy-btn');
+    btn.textContent = '✅ Copied!';
+    setTimeout(function(){btn.textContent='📋 Copy Embed Code';}, 2000);
+  });
+}
+</script>
+{% endblock %}

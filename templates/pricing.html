@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Pricing — Alexander AI Agent{% endblock %}
+{% block content %}
+<style>
+  .pricing-hero{text-align:center;padding:4rem 2rem 2rem;}
+  .pricing-hero h1{font-size:2.5rem;font-weight:800;margin-bottom:1rem;}
+  .pricing-hero p{color:#6b7280;font-size:1rem;max-width:480px;margin:0 auto;}
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem;
+         max-width:900px;margin:3rem auto;padding:0 2rem;}
+  .plan{background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:2rem;
+        display:flex;flex-direction:column;gap:1.25rem;}
+  .plan.featured{border-color:#6366f1;position:relative;}
+  .plan-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+              background:#6366f1;color:#fff;padding:4px 14px;border-radius:20px;
+              font-size:0.78rem;font-weight:700;white-space:nowrap;}
+  .plan-name{font-size:1.1rem;font-weight:800;}
+  .plan-price{font-size:2.25rem;font-weight:800;line-height:1;}
+  .plan-price span{font-size:1rem;font-weight:400;color:#6b7280;}
+  .plan-features{list-style:none;display:flex;flex-direction:column;gap:10px;font-size:0.9rem;flex:1;}
+  .plan-features li::before{content:'✓ ';color:#10b981;font-weight:700;}
+  .plan-features li.no::before{content:'✗ ';color:#4b5563;}
+  .plan-features li.no{color:#4b5563;}
+</style>
+<div class="pricing-hero">
+  <h1>Simple, Honest Pricing</h1>
+  <p>Start free. Upgrade when you need more. No hidden fees, no surprises.</p>
+</div>
+
+<div class="plans">
+  <div class="plan">
+    <div class="plan-name">🆓 Free</div>
+    <div class="plan-price">$0<span>/mo</span></div>
+    <ul class="plan-features">
+      <li>1 AI agent</li>
+      <li>500 messages / month</li>
+      <li>All AI models</li>
+      <li>Embed on any site</li>
+      <li>Basic analytics</li>
+      <li class="no">Custom branding removal</li>
+      <li class="no">Priority support</li>
+    </ul>
+    <a href="/signup" class="btn btn-outline" style="text-align:center;justify-content:center;">Get Started Free</a>
+  </div>
+
+  <div class="plan featured">
+    <div class="plan-badge">⭐ Most Popular</div>
+    <div class="plan-name">🚀 Pro</div>
+    <div class="plan-price">$19<span>/mo</span></div>
+    <ul class="plan-features">
+      <li>10 AI agents</li>
+      <li>10,000 messages / month</li>
+      <li>All AI models</li>
+      <li>Embed on any site</li>
+      <li>Full analytics</li>
+      <li>Remove "Powered by" branding</li>
+      <li>Priority email support</li>
+    </ul>
+    <a href="/signup" class="btn btn-primary" style="text-align:center;justify-content:center;">Start Pro — $19/mo</a>
+  </div>
+
+  <div class="plan">
+    <div class="plan-name">🏢 Business</div>
+    <div class="plan-price">$49<span>/mo</span></div>
+    <ul class="plan-features">
+      <li>Unlimited agents</li>
+      <li>100,000 messages / month</li>
+      <li>All AI models</li>
+      <li>Embed on any site</li>
+      <li>Full analytics + exports</li>
+      <li>White-label (your domain)</li>
+      <li>Priority support + onboarding</li>
+    </ul>
+    <a href="/signup" class="btn btn-outline" style="text-align:center;justify-content:center;">Start Business — $49/mo</a>
+  </div>
+</div>
+
+<div style="text-align:center;padding:1rem 2rem 4rem;color:#6b7280;font-size:0.88rem;">
+  All plans include your own OpenRouter API key — you control your AI costs directly.<br>
+  Questions? <a href="mailto:support@alexanderaiis.com" style="color:#6366f1;">support@alexanderaiis.com</a>
+</div>
+{% endblock %}

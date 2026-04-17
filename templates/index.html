@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Alexander AI Agent — Embeddable AI Chat Widget{% endblock %}
+{% block content %}
+<style>
+  .hero{text-align:center;padding:5rem 2rem 3rem;}
+  .hero h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:800;line-height:1.15;margin-bottom:1.25rem;}
+  .hero h1 span{color:#6366f1;}
+  .hero p{font-size:1.1rem;color:#94a3b8;max-width:560px;margin:0 auto 2rem;line-height:1.6;}
+  .hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;}
+  .code-box{background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:10px;
+            padding:1rem 1.5rem;font-family:monospace;font-size:0.9rem;color:#818cf8;
+            max-width:520px;margin:2rem auto 0;text-align:left;overflow-x:auto;}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem;padding:3rem 2rem;}
+  .feature{background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;}
+  .feature-icon{font-size:2rem;margin-bottom:0.75rem;}
+  .feature h3{font-size:1rem;font-weight:700;margin-bottom:0.5rem;}
+  .feature p{color:#6b7280;font-size:0.88rem;line-height:1.5;}
+  .section-title{text-align:center;font-size:1.75rem;font-weight:800;padding:2rem 2rem 0.5rem;}
+  .section-sub{text-align:center;color:#6b7280;font-size:0.95rem;margin-bottom:2rem;}
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;padding:1rem 2rem 3rem;}
+  .step{text-align:center;padding:1.5rem;}
+  .step-num{width:40px;height:40px;border-radius:50%;background:#6366f1;color:#fff;
+            font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;}
+  .step h3{font-weight:700;margin-bottom:0.4rem;}
+  .step p{color:#6b7280;font-size:0.87rem;}
+</style>
+
+<div class="hero">
+  <h1>Add an AI Agent to<br><span>Any Website in 60 Seconds</span></h1>
+  <p>One script tag. Fully branded. Powered by the latest AI models. No coding required — just copy, paste, and you're live.</p>
+  <div class="hero-btns">
+    <a href="/signup" class="btn btn-primary">🚀 Start Free — No Credit Card</a>
+    <a href="/pricing" class="btn btn-outline">View Pricing</a>
+  </div>
+  <div class="code-box">
+    &lt;script src="https://your-domain.railway.app/widget/<b>your-agent-id</b>.js"&gt;&lt;/script&gt;
+  </div>
+</div>
+
+<div class="container">
+  <h2 class="section-title">Everything You Need</h2>
+  <p class="section-sub">Build, customize, and deploy in minutes.</p>
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🎨</div>
+      <h3>Fully Customizable</h3>
+      <p>Set your brand colors, avatar, name, and greeting. Looks native on your site.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🧠</div>
+      <h3>Your System Prompt</h3>
+      <p>Train your agent with custom instructions. Make it a customer support rep, tutor, or sales assistant.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚡</div>
+      <h3>Latest AI Models</h3>
+      <p>Choose from GPT-4o, Claude, Gemini, and more via OpenRouter. Your API key, your costs.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📊</div>
+      <h3>Analytics Dashboard</h3>
+      <p>See every conversation. Understand what your users are asking and improve over time.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔒</div>
+      <h3>Secure & Private</h3>
+      <p>Your API key is encrypted. Rate limiting built in. CORS origin control included.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">💸</div>
+      <h3>Affordable Pricing</h3>
+      <p>Free tier to start. Pay only when you need more agents or volume. No surprise bills.</p>
+    </div>
+  </div>
+
+  <h2 class="section-title">Live in 3 Steps</h2>
+  <p class="section-sub">Seriously, it takes about a minute.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3>Create Your Agent</h3>
+      <p>Name it, brand it, give it a personality and system prompt.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3>Copy the Script Tag</h3>
+      <p>One line of HTML. Paste it before <code>&lt;/body&gt;</code> on your site.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3>You're Live</h3>
+      <p>Your AI chat widget appears instantly. Start talking to your users.</p>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:2rem 0 3rem;">
+    <a href="/signup" class="btn btn-primary" style="font-size:1rem;padding:14px 32px;">Get Started Free →</a>
+  </div>
+</div>
+{% endblock %}

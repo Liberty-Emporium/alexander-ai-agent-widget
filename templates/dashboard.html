@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Alexander AI Agent{% endblock %}
+{% block content %}
+<style>
+  .dash-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem;}
+  .agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;}
+  .agent-card{background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;
+              display:flex;flex-direction:column;gap:1rem;transition:border-color 0.2s;}
+  .agent-card:hover{border-color:rgba(99,102,241,0.4);}
+  .agent-top{display:flex;align-items:center;gap:12px;}
+  .agent-avatar{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;
+                justify-content:center;font-size:22px;flex-shrink:0;}
+  .agent-name{font-weight:700;font-size:1rem;}
+  .agent-tagline{color:#6b7280;font-size:0.83rem;margin-top:2px;}
+  .agent-stats{display:flex;gap:1rem;font-size:0.82rem;color:#6b7280;}
+  .agent-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;}
+  .badge-free{background:rgba(99,102,241,0.15);color:#818cf8;}
+  .badge-pro{background:rgba(16,185,129,0.15);color:#10b981;}
+  .empty-state{text-align:center;padding:4rem 2rem;color:#6b7280;}
+  .empty-state h2{font-size:1.25rem;font-weight:700;color:#f1f5f9;margin-bottom:0.5rem;}
+</style>
+<div class="container">
+  <div class="dash-header">
+    <div>
+      <h1 style="font-size:1.6rem;font-weight:800;">My Agents</h1>
+      <p style="color:#6b7280;font-size:0.9rem;margin-top:4px;">
+        {{ session.get('email') }} ·
+        <span class="badge badge-{{ plan }}">{{ plan | upper }}</span>
+      </p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <a href="/change-password" class="btn btn-outline btn-sm">🔑 Password</a>
+      <a href="/agent/new" class="btn btn-primary">+ New Agent</a>
+    </div>
+  </div>
+
+  {% if agents %}
+  <div class="agent-grid">
+    {% for a in agents %}
+    <div class="agent-card">
+      <div class="agent-top">
+        <div class="agent-avatar" style="background:{{ a.color }}20;">{{ a.avatar }}</div>
+        <div>
+          <div class="agent-name">{{ a.name }}</div>
+          <div class="agent-tagline">{{ a.tagline }}</div>
+        </div>
+      </div>
+      <div class="agent-stats">
+        <span>💬 {{ a.msg_count }} messages</span>
+        <span>🤖 {{ a.model.split('/')[-1] }}</span>
+      </div>
+      <div class="agent-actions">
+        <a href="/agent/{{ a.id }}" class="btn btn-primary btn-sm">View</a>
+        <a href="/agent/{{ a.id }}/edit" class="btn btn-outline btn-sm">Edit</a>
+        <a href="/agent/{{ a.id }}/analytics" class="btn btn-outline btn-sm">Analytics</a>
+        <a href="/preview/{{ a.id }}" class="btn btn-outline btn-sm" target="_blank">Preview</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
+    <h2>No agents yet</h2>
+    <p>Create your first AI agent and embed it anywhere in minutes.</p>
+    <a href="/agent/new" class="btn btn-primary" style="margin-top:1.5rem;">Create Your First Agent →</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
