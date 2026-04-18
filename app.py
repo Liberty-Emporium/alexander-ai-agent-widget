@@ -388,7 +388,7 @@ def agent_detail(agent_id):
     if not agent:
         flash('Agent not found.', 'error')
         return redirect(url_for('dashboard'))
-    base_url = request.host_url.rstrip('/')
+    base_url = ('https://' + request.host).rstrip('/')
     return render_template('agent_detail.html', agent=agent, base_url=base_url)
 
 @app.route('/agent/<agent_id>/edit', methods=['GET', 'POST'])
@@ -444,7 +444,7 @@ def widget_js(agent_id):
         return 'console.error("Alexander AI Agent: invalid agent ID");', 404, \
                {'Content-Type': 'application/javascript'}
 
-    base_url = request.host_url.rstrip('/').replace('http://', 'https://')
+    base_url = ('https://' + request.host).rstrip('/')
     js = render_template('widget.js',
         agent=dict(agent), base_url=base_url,
         color=agent['color'], avatar=agent['avatar'],

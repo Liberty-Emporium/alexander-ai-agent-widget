@@ -148,7 +148,7 @@
         Paste this <strong>one line</strong> before <code>&lt;/body&gt;</code> on any page.
       </p>
       <div class="embed-box" id="embedCode">
-        &lt;script src="{{ base_url }}/widget/{{ agent.id }}.js"&gt;&lt;/script&gt;
+        &lt;script src="{{ base_url.replace('http://', 'https://') }}/widget/{{ agent.id }}.js"&gt;&lt;/script&gt;
       </div>
       <button class="btn btn-outline btn-sm copy-btn" onclick="copyEmbed()">📋 Copy Embed Code</button>
     </div>

@@ -33,6 +33,6 @@
     <a href="javascript:history.back()" class="back-btn">← Back to Dashboard</a>
   </div>
 
-  <script src="{{ request.host_url }}widget/{{ agent.id }}.js"></script>
+  <script src="{{ request.host_url.replace('http://', 'https://') }}widget/{{ agent.id }}.js"></script>
 </body>
 </html>
