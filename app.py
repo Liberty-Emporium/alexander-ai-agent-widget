@@ -140,14 +140,29 @@ def call_openrouter(messages, model, api_key):
             timeout=30
         )
         if r.status_code == 401:
-            return "Configuration error: invalid API key. Please check your OpenRouter key in the dashboard."
+            return "⚠️ Invalid API key. Go to Edit → check your OpenRouter key."
         if r.status_code == 402:
-            return "API key has insufficient credits. Please add credits at openrouter.ai."
-        r.raise_for_status()
-        return r.json()['choices'][0]['message']['content']
+            return "⚠️ No credits on this API key. Add credits at openrouter.ai."
+        if r.status_code == 400:
+            err = r.json().get('error', {}).get('message', r.text[:200])
+            return f"⚠️ Bad request: {err}"
+        if r.status_code == 404:
+            return f"⚠️ Model not found: '{model}'. Try editing your agent and using a model like 'openai/gpt-4o-mini' or 'google/gemini-flash-1.5'."
+        if not r.ok:
+            try:
+                err = r.json().get('error', {}).get('message', r.text[:300])
+            except Exception:
+                err = r.text[:300]
+            return f"⚠️ API error {r.status_code}: {err}"
+        data = r.json()
+        return data['choices'][0]['message']['content']
+    except _req.exceptions.Timeout:
+        return "⚠️ Request timed out. OpenRouter took too long to respond."
+    except _req.exceptions.ConnectionError:
+        return "⚠️ Could not reach OpenRouter. Check your internet connection."
     except Exception as e:
         app.logger.error(f'OpenRouter error: {type(e).__name__}: {e}')
-        return f"I'm having trouble connecting right now. Please try again in a moment."
+        return f"⚠️ Unexpected error: {type(e).__name__}: {str(e)[:200]}"
 
 # ── Public pages ──────────────────────────────────────────────────────────────
 
