@@ -124,6 +124,38 @@ def cors_headers(res):
         res.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return res
 
+# ── Model name normalizer ────────────────────────────────────────────────────
+
+MODEL_ALIASES = {
+    'gemini-flash-1.5':           'google/gemini-flash-1.5',
+    'gemini-pro':                 'google/gemini-pro',
+    'gemini-1.5-pro':             'google/gemini-pro-1.5',
+    'gemini-2.0-flash':           'google/gemini-2.0-flash-001',
+    'gemini-flash-2.0':           'google/gemini-2.0-flash-001',
+    'claude-3-haiku':             'anthropic/claude-3-haiku',
+    'claude-3.5-sonnet':          'anthropic/claude-3.5-sonnet',
+    'claude-3-sonnet':            'anthropic/claude-3-sonnet',
+    'claude-3-opus':              'anthropic/claude-3-opus',
+    'gpt-4o':                     'openai/gpt-4o',
+    'gpt-4o-mini':                'openai/gpt-4o-mini',
+    'gpt-4':                      'openai/gpt-4',
+    'gpt-3.5-turbo':              'openai/gpt-3.5-turbo',
+    'llama-3.1-8b':               'meta-llama/llama-3.1-8b-instruct:free',
+    'llama-3.1-8b-instruct':      'meta-llama/llama-3.1-8b-instruct:free',
+    'llama-3.3-70b':              'meta-llama/llama-3.3-70b-instruct',
+    'mistral-7b':                 'mistralai/mistral-7b-instruct',
+    'mixtral-8x7b':               'mistralai/mixtral-8x7b-instruct',
+}
+
+def normalize_model(model):
+    """Fix common shorthand model names to their full OpenRouter IDs."""
+    if not model:
+        return 'openai/gpt-4o-mini'
+    # Already has a slash — assume it's correct
+    if '/' in model:
+        return model
+    return MODEL_ALIASES.get(model.lower(), model)
+
 # ── OpenRouter chat ───────────────────────────────────────────────────────────
 
 import requests as _req
@@ -420,13 +452,19 @@ def chat(agent_id):
     if len(user_msg) > 2000:
         return jsonify({'error': 'Message too long (max 2000 chars)'}), 400
 
+    # Normalize model name (fix shorthand like 'gemini-flash-1.5' -> 'google/gemini-flash-1.5')
+    model = normalize_model(agent['model'])
+    if model != agent['model']:
+        db.execute('UPDATE agents SET model=? WHERE id=?', (model, agent_id))
+        db.commit()
+
     messages = [{'role': 'system', 'content': agent['system_prompt']}]
     for h in history[-10:]:  # last 10 turns for context
         if h.get('role') in ('user', 'assistant') and h.get('content'):
             messages.append({'role': h['role'], 'content': h['content'][:1000]})
     messages.append({'role': 'user', 'content': user_msg})
 
-    reply = call_openrouter(messages, agent['model'], agent['api_key'])
+    reply = call_openrouter(messages, model, agent['api_key'])
 
     # Log message + increment counter
     db.execute('INSERT INTO messages(agent_id,role,content,session_id) VALUES(?,?,?,?)',
