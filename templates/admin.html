@@ -146,9 +146,15 @@
             <td style="color:#94a3b8;font-size:0.82rem;">{{ a.email }}</td>
             <td style="font-size:0.8rem;color:#6b7280;">{{ a.model.split('/')[-1] }}</td>
             <td>{{ a.msg_count }}</td>
-            <td style="color:#6b7280;font-size:0.8rem;">{{ a.created[:10] }}</td>
+            <td style="color:#6b7280;font-size:0.8rem;">
+              {{ a.created[:10] }}<br>
+              {% if a.trained_at %}<span style="color:#10b981;font-size:0.72rem;">✅ Trained {{ a.trained_at[:10] }}</span>{% else %}<span style="color:#4b5563;font-size:0.72rem;">Not trained</span>{% endif %}
+            </td>
             <td>
-              <a href="/preview/{{ a.id }}" target="_blank" class="btn btn-outline btn-sm" style="font-size:0.75rem;padding:4px 10px;">👁 Preview</a>
+              <div style="display:flex;gap:6px;">
+                <a href="/admin/agent/{{ a.id }}/train" class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:4px 12px;">🎓 Train</a>
+                <a href="/preview/{{ a.id }}" target="_blank" class="btn btn-outline btn-sm" style="font-size:0.75rem;padding:4px 10px;">👁 Preview</a>
+              </div>
             </td>
           </tr>
           {% endfor %}

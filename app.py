@@ -48,6 +48,9 @@ def init_db():
             api_key       TEXT NOT NULL,
             allowed_origins TEXT DEFAULT '*',
             msg_count     INTEGER DEFAULT 0,
+            training_notes TEXT DEFAULT '',
+            trained_by    TEXT DEFAULT '',
+            trained_at    TEXT DEFAULT '',
             created       TEXT DEFAULT (datetime('now')),
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
@@ -632,6 +635,105 @@ def admin_toggle_admin(user_id):
     db.commit()
     flash(f'Admin status {"granted" if new_val else "revoked"}.', 'success')
     return redirect(url_for('admin_panel'))
+
+# ── Admin: Agent Trainer ─────────────────────────────────────────────────
+
+def migrate_training_columns():
+    """Add training columns to agents table if they don't exist."""
+    try:
+        db = sqlite3.connect(DB_PATH)
+        for col, default in [('training_notes', ''), ('trained_by', ''), ('trained_at', '')]:
+            try:
+                db.execute(f"ALTER TABLE agents ADD COLUMN {col} TEXT DEFAULT '{default}'")
+            except Exception:
+                pass
+        db.commit()
+        db.close()
+    except Exception as e:
+        app.logger.error(f'Training migration error: {e}')
+
+migrate_training_columns()
+
+@app.route('/admin/agent/<agent_id>/train', methods=['GET'])
+@admin_required
+def admin_train_agent(agent_id):
+    db = get_db()
+    agent = db.execute(
+        'SELECT a.*, u.email as owner_email FROM agents a JOIN users u ON a.user_id=u.id WHERE a.id=?',
+        (agent_id,)
+    ).fetchone()
+    if not agent:
+        flash('Agent not found.', 'error')
+        return redirect(url_for('admin_panel'))
+    # Recent conversation history for context
+    recent_msgs = db.execute(
+        'SELECT * FROM messages WHERE agent_id=? ORDER BY ts DESC LIMIT 50',
+        (agent_id,)
+    ).fetchall()
+    return render_template('admin_train.html', agent=dict(agent), recent_msgs=recent_msgs)
+
+@app.route('/admin/agent/<agent_id>/train/save', methods=['POST'])
+@admin_required
+def admin_train_save(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=?', (agent_id,)).fetchone()
+    if not agent:
+        flash('Agent not found.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    name          = request.form.get('name', agent['name']).strip()
+    tagline       = request.form.get('tagline', agent['tagline']).strip()
+    system_prompt = request.form.get('system_prompt', '').strip()
+    model         = request.form.get('model', agent['model'])
+    color         = request.form.get('color', agent['color'])
+    avatar        = request.form.get('avatar', agent['avatar']).strip()
+    training_notes = request.form.get('training_notes', '').strip()
+    # Only update api_key if a new one was provided
+    new_key = request.form.get('api_key', '').strip()
+    api_key = new_key if new_key else agent['api_key']
+
+    model = normalize_model(model)
+
+    import datetime as _dt
+    now = _dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+    db.execute('''UPDATE agents SET
+        name=?, tagline=?, system_prompt=?, model=?, color=?, avatar=?,
+        training_notes=?, trained_by=?, trained_at=?, api_key=?
+        WHERE id=?''',
+        (name, tagline, system_prompt, model, color, avatar,
+         training_notes, session['email'], now, api_key, agent_id))
+    db.commit()
+    flash(f'Agent "{name}" trained and saved successfully! ✅', 'success')
+    return redirect(url_for('admin_train_agent', agent_id=agent_id))
+
+@app.route('/admin/agent/<agent_id>/train/chat', methods=['POST'])
+@admin_required
+def admin_train_chat(agent_id):
+    """Admin test chat — uses agent config but doesn't log to messages table."""
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=?', (agent_id,)).fetchone()
+    if not agent:
+        return jsonify({'error': 'Agent not found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    user_msg = (data.get('message') or '').strip()
+    history  = data.get('history') or []
+    # Allow testing with a custom system prompt (unsaved draft)
+    test_prompt = data.get('test_prompt') or agent['system_prompt']
+    test_model  = normalize_model(data.get('test_model') or agent['model'])
+
+    if not user_msg:
+        return jsonify({'error': 'Message required'}), 400
+
+    messages = [{'role': 'system', 'content': test_prompt}]
+    for h in history[-10:]:
+        if h.get('role') in ('user', 'assistant') and h.get('content'):
+            messages.append({'role': h['role'], 'content': h['content'][:1000]})
+    messages.append({'role': 'user', 'content': user_msg})
+
+    reply = call_openrouter(messages, test_model, agent['api_key'])
+    return jsonify({'reply': reply})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
