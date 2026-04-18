@@ -31,6 +31,11 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <a href="/change-password" class="btn btn-outline btn-sm">🔑 Password</a>
+      {% if plan in ('pro','business') %}
+      <a href="/billing/portal" class="btn btn-outline btn-sm">💳 Billing</a>
+      {% else %}
+      <a href="/pricing" class="btn btn-outline btn-sm" style="border-color:rgba(99,102,241,0.4);color:#818cf8;">⚡ Upgrade</a>
+      {% endif %}
       {% if session.get('is_admin') %}<a href="/admin" class="btn btn-outline btn-sm">🛡️ Admin</a>{% endif %}
       <a href="/agent/new" class="btn btn-primary">+ New Agent</a>
     </div>

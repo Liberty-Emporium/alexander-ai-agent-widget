@@ -1,7 +1,16 @@
-import os, sqlite3, secrets, hashlib, json, time
+import os, sqlite3, secrets, hashlib, json, time, threading
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, g)
+import stripe
+
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_PK       = os.environ.get('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_WH_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+
+# Price IDs — set these as Railway env vars after creating products in Stripe
+STRIPE_PRICE_PRO      = os.environ.get('STRIPE_PRICE_PRO', '')       # $19/mo
+STRIPE_PRICE_BUSINESS = os.environ.get('STRIPE_PRICE_BUSINESS', '')  # $49/mo
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -29,12 +38,15 @@ def init_db():
     db = sqlite3.connect(DB_PATH)
     db.executescript('''
         CREATE TABLE IF NOT EXISTS users (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            email     TEXT UNIQUE NOT NULL,
-            password  TEXT NOT NULL,
-            plan      TEXT DEFAULT 'free',
-            is_admin  INTEGER DEFAULT 0,
-            created   TEXT DEFAULT (datetime('now'))
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            email                  TEXT UNIQUE NOT NULL,
+            password               TEXT NOT NULL,
+            plan                   TEXT DEFAULT 'free',
+            plan_status            TEXT DEFAULT 'active',
+            stripe_customer_id     TEXT,
+            stripe_subscription_id TEXT,
+            is_admin               INTEGER DEFAULT 0,
+            created                TEXT DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS agents (
             id            TEXT PRIMARY KEY,
@@ -562,6 +574,129 @@ def bootstrap_admin():
         app.logger.error(f'Admin bootstrap error: {e}')
 
 bootstrap_admin()
+
+# ── Stripe DB migrations ───────────────────────────────────────────────────
+def run_stripe_migrations():
+    """Add Stripe columns to users table if they don't exist."""
+    try:
+        db = sqlite3.connect(DB_PATH)
+        cols = {r[1] for r in db.execute('PRAGMA table_info(users)').fetchall()}
+        for col, defn in [
+            ('plan_status',            'TEXT DEFAULT \'active\''),
+            ('stripe_customer_id',     'TEXT'),
+            ('stripe_subscription_id', 'TEXT'),
+        ]:
+            if col not in cols:
+                db.execute(f'ALTER TABLE users ADD COLUMN {col} {defn}')
+                app.logger.info(f'Migration: added column {col}')
+        db.commit()
+        db.close()
+    except Exception as e:
+        app.logger.error(f'Stripe migration error: {e}')
+
+run_stripe_migrations()
+
+# ── Stripe helpers ─────────────────────────────────────────────────────────
+PLAN_PRICES = {'pro': STRIPE_PRICE_PRO, 'business': STRIPE_PRICE_BUSINESS}
+PLAN_HIERARCHY = {'free': 0, 'pro': 1, 'business': 2, 'admin': 9}
+
+@app.route('/billing/checkout/<plan>')
+def billing_checkout(plan):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if plan not in PLAN_PRICES or not PLAN_PRICES[plan]:
+        flash('Invalid plan or Stripe not configured.', 'error')
+        return redirect(url_for('pricing'))
+    try:
+        checkout = stripe.checkout.Session.create(
+            customer_email=session.get('email'),
+            payment_method_types=['card'],
+            line_items=[{'price': PLAN_PRICES[plan], 'quantity': 1}],
+            mode='subscription',
+            success_url=request.host_url + 'billing/success',
+            cancel_url=request.host_url + 'pricing',
+            metadata={'user_id': str(session['user_id']), 'plan': plan},
+        )
+        return redirect(checkout.url)
+    except Exception as e:
+        app.logger.error(f'Stripe checkout error: {e}')
+        flash('Payment error. Please try again.', 'error')
+        return redirect(url_for('pricing'))
+
+@app.route('/billing/success')
+def billing_success():
+    flash('🎉 Payment successful! Your plan will activate within seconds.', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/billing/portal')
+def billing_portal():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    db = get_db()
+    user = db.execute('SELECT stripe_customer_id FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    if not user or not user['stripe_customer_id']:
+        flash('No active subscription found.', 'error')
+        return redirect(url_for('pricing'))
+    try:
+        portal = stripe.billing_portal.Session.create(
+            customer=user['stripe_customer_id'],
+            return_url=request.host_url + 'dashboard',
+        )
+        return redirect(portal.url)
+    except Exception as e:
+        flash('Could not open billing portal. Please contact support.', 'error')
+        return redirect(url_for('dashboard'))
+
+@app.route('/webhook/stripe', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig     = request.headers.get('Stripe-Signature', '')
+    if not STRIPE_WH_SECRET:
+        return '', 200
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WH_SECRET)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        return 'Invalid signature', 400
+    threading.Thread(target=_handle_stripe_event, args=(event,), daemon=True).start()
+    return '', 200
+
+def _handle_stripe_event(event):
+    etype = event['type']
+    data  = event['data']['object']
+    db    = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    try:
+        if etype == 'checkout.session.completed':
+            user_id = data['metadata'].get('user_id')
+            plan    = data['metadata'].get('plan', 'pro')
+            cus_id  = data.get('customer')
+            sub_id  = data.get('subscription')
+            if user_id:
+                db.execute(
+                    'UPDATE users SET plan=?, plan_status=\'active\', stripe_customer_id=?, stripe_subscription_id=? WHERE id=?',
+                    (plan, cus_id, sub_id, int(user_id))
+                )
+                app.logger.info(f'User {user_id} upgraded to {plan}')
+        elif etype == 'customer.subscription.updated':
+            sub_id = data['id']
+            status = data['status']
+            db.execute('UPDATE users SET plan_status=? WHERE stripe_subscription_id=?', (status, sub_id))
+        elif etype == 'customer.subscription.deleted':
+            sub_id = data['id']
+            db.execute(
+                'UPDATE users SET plan=\'free\', plan_status=\'canceled\', stripe_subscription_id=NULL WHERE stripe_subscription_id=?',
+                (sub_id,)
+            )
+            app.logger.info(f'Subscription {sub_id} canceled — downgraded to free')
+        elif etype == 'invoice.payment_failed':
+            cus_id = data.get('customer')
+            if cus_id:
+                db.execute('UPDATE users SET plan_status=\'past_due\' WHERE stripe_customer_id=?', (cus_id,))
+        db.commit()
+    except Exception as e:
+        app.logger.error(f'Webhook handler error: {e}')
+    finally:
+        db.close()
 
 # ── Admin required decorator ───────────────────────────────────────────────
 

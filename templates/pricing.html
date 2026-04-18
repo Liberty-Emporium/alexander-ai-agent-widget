@@ -39,7 +39,11 @@
       <li class="no">Custom branding removal</li>
       <li class="no">Priority support</li>
     </ul>
+    {% if session.user_id %}
+    <a href="/dashboard" class="btn btn-outline" style="text-align:center;justify-content:center;">Go to Dashboard</a>
+    {% else %}
     <a href="/signup" class="btn btn-outline" style="text-align:center;justify-content:center;">Get Started Free</a>
+    {% endif %}
   </div>
 
   <div class="plan featured">
@@ -55,7 +59,11 @@
       <li>Remove "Powered by" branding</li>
       <li>Priority email support</li>
     </ul>
+    {% if session.user_id %}
+    <a href="/billing/checkout/pro" class="btn btn-primary" style="text-align:center;justify-content:center;">⚡ Upgrade to Pro — $19/mo</a>
+    {% else %}
     <a href="/signup" class="btn btn-primary" style="text-align:center;justify-content:center;">Start Pro — $19/mo</a>
+    {% endif %}
   </div>
 
   <div class="plan">
@@ -70,7 +78,11 @@
       <li>White-label (your domain)</li>
       <li>Priority support + onboarding</li>
     </ul>
+    {% if session.user_id %}
+    <a href="/billing/checkout/business" class="btn btn-outline" style="text-align:center;justify-content:center;">⚡ Upgrade to Business — $49/mo</a>
+    {% else %}
     <a href="/signup" class="btn btn-outline" style="text-align:center;justify-content:center;">Start Business — $49/mo</a>
+    {% endif %}
   </div>
 </div>
 
