@@ -55,6 +55,51 @@
     </div>
   </div>
 
+  <!-- Ticket Summary -->
+  {% if ticket_stats.open > 0 or ticket_stats.emergency > 0 or ticket_stats.urgent > 0 %}
+  <div style="margin-bottom:1.5rem;padding:1.25rem 1.5rem;border-radius:12px;
+    background:{% if ticket_stats.emergency > 0 %}rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3){% elif ticket_stats.urgent > 0 %}rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3){% else %}rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2){% endif %};">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <div style="font-weight:800;font-size:1rem;margin-bottom:6px;">
+          🎫
+          {% if ticket_stats.emergency > 0 %}
+            <span style="color:#f87171;">{{ ticket_stats.emergency }} Emergency</span> ticket{{ 's' if ticket_stats.emergency != 1 }} need immediate attention!
+          {% elif ticket_stats.urgent > 0 %}
+            <span style="color:#fbbf24;">{{ ticket_stats.urgent }} Urgent</span> ticket{{ 's' if ticket_stats.urgent != 1 }} waiting on you.
+          {% else %}
+            <span style="color:#818cf8;">{{ ticket_stats.open }} open</span> ticket{{ 's' if ticket_stats.open != 1 }}.
+          {% endif %}
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:0.85rem;">
+          {% if ticket_stats.emergency > 0 %}<span style="color:#f87171;">&#x1F6A8; {{ ticket_stats.emergency }} Emergency (1hr SLA)</span>{% endif %}
+          {% if ticket_stats.urgent > 0 %}<span style="color:#fbbf24;">&#x26A1; {{ ticket_stats.urgent }} Urgent (4hr SLA)</span>{% endif %}
+          {% if ticket_stats.normal_open > 0 %}<span style="color:#818cf8;">&#x1F4CB; {{ ticket_stats.normal_open }} Normal (24hr SLA)</span>{% endif %}
+        </div>
+      </div>
+      <a href="/admin/tickets" class="btn btn-primary">View All Tickets →</a>
+    </div>
+    <!-- Recent open tickets preview -->
+    {% if recent_tickets %}
+    <div style="margin-top:1rem;border-top:1px solid rgba(255,255,255,0.07);padding-top:1rem;display:flex;flex-direction:column;gap:8px;">
+      {% for t in recent_tickets %}
+      <div style="display:flex;align-items:center;gap:10px;font-size:0.85rem;">
+        <span style="flex-shrink:0;">{{ '🚨' if t.priority == 'emergency' else ('⚡' if t.priority == 'urgent' else '📋') }}</span>
+        <span style="font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ t.subject }}</span>
+        <span style="color:#6b7280;flex-shrink:0;font-size:0.75rem;">{{ t.user_email }}</span>
+        <span style="color:#4b5563;flex-shrink:0;font-size:0.75rem;">{{ t.created[:10] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div style="margin-bottom:1.5rem;padding:1rem 1.5rem;border-radius:12px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);display:flex;align-items:center;justify-content:space-between;">
+    <span style="color:#10b981;font-weight:600;">&#x2705; No open tickets — you're all caught up!</span>
+    <a href="/admin/tickets" class="btn btn-outline btn-sm">View History</a>
+  </div>
+  {% endif %}
+
   <!-- Users Table -->
   <div class="card">
     <div class="section-head">

@@ -1114,7 +1114,21 @@ def admin_panel():
         'messages': db.execute('SELECT COUNT(*) FROM messages').fetchone()[0],
         'pro_users': db.execute("SELECT COUNT(*) FROM users WHERE plan='pro'").fetchone()[0],
     }
-    return render_template('admin.html', users=users, agents=agents, stats=stats)
+    ticket_stats = {
+        'open':        db.execute("SELECT COUNT(*) FROM tickets WHERE status NOT IN ('resolved','closed')").fetchone()[0],
+        'emergency':   db.execute("SELECT COUNT(*) FROM tickets WHERE priority='emergency' AND status NOT IN ('resolved','closed')").fetchone()[0],
+        'urgent':      db.execute("SELECT COUNT(*) FROM tickets WHERE priority='urgent' AND status NOT IN ('resolved','closed')").fetchone()[0],
+        'normal_open': db.execute("SELECT COUNT(*) FROM tickets WHERE priority='normal' AND status NOT IN ('resolved','closed')").fetchone()[0],
+    }
+    recent_tickets = db.execute('''
+        SELECT t.subject, t.priority, t.created, u.email as user_email
+        FROM tickets t JOIN users u ON t.user_id=u.id
+        WHERE t.status NOT IN ('resolved','closed')
+        ORDER BY CASE t.priority WHEN 'emergency' THEN 1 WHEN 'urgent' THEN 2 ELSE 3 END, t.created ASC
+        LIMIT 5
+    ''').fetchall()
+    return render_template('admin.html', users=users, agents=agents, stats=stats,
+                           ticket_stats=ticket_stats, recent_tickets=recent_tickets)
 
 @app.route('/admin/user/<int:user_id>/plan', methods=['POST'])
 @admin_required
