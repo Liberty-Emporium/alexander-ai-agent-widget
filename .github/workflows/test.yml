@@ -1,0 +1,133 @@
+name: Test & Deploy — AI Agent Widget
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax-check:
+    name: Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Python syntax
+        run: python3 -c "import ast; ast.parse(open('app.py').read()); print('✅ Syntax OK')"
+      - name: Install & lint
+        run: |
+          pip install flake8 -q
+          flake8 app.py --max-line-length=200 --ignore=E501,W503,E302,E303,W291,W293,E711,E712 || true
+
+  health-check:
+    name: Production Health Check
+    runs-on: ubuntu-latest
+    needs: syntax-check
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Wait for Railway deploy
+        run: sleep 90
+
+      - name: Health check
+        run: |
+          echo "🔍 Checking app health..."
+          for i in {1..8}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://ai-agent-widget-production.up.railway.app/health)
+            BODY=$(curl -s https://ai-agent-widget-production.up.railway.app/health)
+            echo "Attempt $i: HTTP $STATUS — $BODY"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ App is healthy!"
+              exit 0
+            fi
+            echo "⏳ Not ready yet, waiting 15s..."
+            sleep 15
+          done
+          echo "❌ App failed health check after 8 attempts"
+          exit 1
+
+  playwright-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          pip install playwright pytest pytest-playwright requests -q
+          playwright install chromium --with-deps -q
+
+      - name: Run tests
+        run: |
+          cat > test_widget.py << 'EOF'
+          import pytest, requests
+          from playwright.sync_api import sync_playwright, expect
+          import secrets as _s
+
+          BASE = "https://ai-agent-widget-production.up.railway.app"
+
+          def test_health():
+              r = requests.get(f"{BASE}/health", timeout=15)
+              assert r.status_code == 200
+              assert r.json()["status"] == "ok"
+              assert r.json()["db"] == "ok"
+
+          def test_homepage():
+              r = requests.get(BASE, timeout=15)
+              assert r.status_code == 200
+
+          def test_login_page():
+              r = requests.get(f"{BASE}/login", timeout=15)
+              assert r.status_code == 200
+              assert "password" in r.text.lower()
+
+          def test_signup_page():
+              r = requests.get(f"{BASE}/signup", timeout=15)
+              assert r.status_code == 200
+              assert "confirm_password" in r.text
+
+          def test_forgot_password():
+              r = requests.get(f"{BASE}/forgot-password", timeout=15)
+              assert r.status_code == 200
+
+          def test_pricing():
+              r = requests.get(f"{BASE}/pricing", timeout=15)
+              assert r.status_code == 200
+              assert "19" in r.text or "pro" in r.text.lower()
+
+          def test_signup_and_dashboard():
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(headless=True)
+                  page = browser.new_page()
+                  email = f"ci-{_s.token_hex(4)}@test.com"
+                  page.goto(f"{BASE}/signup")
+                  page.fill("input[name='email']", email)
+                  page.fill("input[name='password']", "TestPass123!")
+                  page.fill("input[name='confirm_password']", "TestPass123!")
+                  page.click("button[type='submit']")
+                  page.wait_for_url(f"{BASE}/dashboard", timeout=15000)
+                  assert "/dashboard" in page.url
+                  browser.close()
+
+          def test_tickets_page():
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(headless=True)
+                  page = browser.new_page()
+                  page.goto(f"{BASE}/tickets")
+                  # Either shows tickets page or redirects to login
+                  assert "/tickets" in page.url or "/login" in page.url
+                  browser.close()
+          EOF
+          python3 -m pytest test_widget.py -v --tb=short
+
+      - name: Report
+        if: always()
+        run: echo "Tests complete — check results above"
