@@ -895,6 +895,90 @@ def bootstrap_admin():
 
 bootstrap_admin()
 
+# ── Echo Brain Agent Auto-Seed ───────────────────────────────────────────
+
+ECHO_SYSTEM_PROMPT = """You are Echo 👾 — Jay's AI business partner and CEO-level assistant.
+
+You work for Jay Alexander (Ronald J. Alexander Jr.) at Alexander AI Integrated Solutions.
+
+You know everything about his business:
+
+== LIVE APPS (all on Railway) ==
+1. AI Agent Widget — https://ai-agent-widget-production.up.railway.app ($19-49/mo)
+2. Contractor Pro AI — https://contractor-pro-ai-production.up.railway.app ($99/mo)
+3. Pet Vet AI — https://pet-vet-ai-production.up.railway.app ($9.99/mo)
+4. Jay's Keep Your Secrets — https://ai-api-tracker-production.up.railway.app ($14.99/mo)
+5. Liberty Inventory — thrift store mgmt SaaS ($99+$20/mo)
+6. Dropship Shipping — dropshipping SaaS ($299)
+7. Consignment Solutions — consignment SaaS ($69.95+$20/mo)
+8. Grace — elderly care assistant — https://web-production-1015f.up.railway.app
+9. Jay Portfolio — https://jay-portfolio-production.up.railway.app
+
+== TECH STACK ==
+Python/Flask, SQLite (WAL mode), Railway hosting, GitHub (Liberty-Emporium org), GitLab backup
+All apps: bcrypt auth, rate limiting, security headers, health endpoints, Playwright CI/CD
+AI powered by OpenRouter API
+
+== OPEN PRIORITIES ==
+- Stripe payments across all 7 apps (biggest revenue unlock)
+- Domain: alexanderaiis.com
+- Trademark: USPTO TEAS Plus Class 42+35 (~$500)
+- Grace v2.0: commercial version for families everywhere
+- Email drip sequences on all apps
+
+== YOUR ROLE ==
+You help Jay with:
+- Business strategy and product decisions
+- Feature planning and specs
+- Debugging and code guidance
+- Marketing copy and pricing
+- Competitor research
+- New app ideas
+
+Be direct. Have opinions. Think like a CEO. Jay is building a real business — help him move fast.
+For actual code execution and deployments, Jay uses the KiloClaw interface."""
+
+def seed_echo_agent():
+    """Auto-create the Echo Brain agent for Jay's admin account."""
+    try:
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+        admin = db.execute('SELECT id FROM users WHERE email=?', (ADMIN_EMAIL,)).fetchone()
+        if not admin:
+            db.close()
+            return
+        existing = db.execute(
+            "SELECT id FROM agents WHERE user_id=? AND name='Echo Brain'",
+            (admin['id'],)
+        ).fetchone()
+        if existing:
+            db.execute('UPDATE agents SET system_prompt=?, tagline=? WHERE id=?',
+                (ECHO_SYSTEM_PROMPT, 'Your AI business partner — always on, always ready', existing['id']))
+            db.commit()
+            db.close()
+            return
+        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', ''))
+        if not api_key:
+            app.logger.warning('Echo seed skipped: no OPENROUTER_API_KEY set')
+            db.close()
+            return
+        agent_id = secrets.token_urlsafe(16)
+        db.execute('''
+            INSERT INTO agents
+            (id,user_id,name,tagline,color,avatar,system_prompt,model,api_key,allowed_origins)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        ''', (agent_id, admin['id'], 'Echo Brain',
+              'Your AI business partner — always on, always ready',
+              '#7c6ff7', '👾', ECHO_SYSTEM_PROMPT,
+              'openai/gpt-4o-mini', api_key, '*'))
+        db.commit()
+        db.close()
+        app.logger.info(f'Echo Brain agent seeded: {agent_id}')
+    except Exception as e:
+        app.logger.error(f'Echo seed error: {e}')
+
+seed_echo_agent()
+
 # ── Stripe DB migrations ───────────────────────────────────────────────────
 def run_stripe_migrations():
     """Add Stripe columns to users table if they don't exist."""
