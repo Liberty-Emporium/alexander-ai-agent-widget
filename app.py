@@ -138,6 +138,20 @@ def init_db():
             FOREIGN KEY(agent_id) REFERENCES agents(id)
         );
         CREATE INDEX IF NOT EXISTS idx_memory_agent_session ON session_memory(agent_id, session_id);
+        CREATE TABLE IF NOT EXISTS agent_actions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id    TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            method      TEXT NOT NULL DEFAULT 'POST',
+            url         TEXT NOT NULL,
+            headers_json TEXT DEFAULT '{}',
+            body_template TEXT DEFAULT '{}',
+            enabled     INTEGER DEFAULT 1,
+            created     TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_actions_agent ON agent_actions(agent_id);
         CREATE TABLE IF NOT EXISTS tickets (
             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id            INTEGER NOT NULL,
@@ -180,7 +194,7 @@ def migrate_model_names():
         app.logger.error(f'Model migration error: {e}')
 
 def migrate_brain_columns():
-    """Add identity_md, soul_md, memory_md columns to existing agents table."""
+    """Add identity_md, soul_md, memory_md columns + ensure agent_actions table."""
     try:
         db = sqlite3.connect(DB_PATH)
         cols = [r[1] for r in db.execute("PRAGMA table_info(agents)").fetchall()]
@@ -188,10 +202,26 @@ def migrate_brain_columns():
             if col not in cols:
                 db.execute(f"ALTER TABLE agents ADD COLUMN {col} TEXT DEFAULT ''")
                 app.logger.info(f'Added column: {col}')
+        # Ensure agent_actions table exists (for upgrades from older DB)
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS agent_actions (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id     TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                description  TEXT NOT NULL DEFAULT '',
+                method       TEXT NOT NULL DEFAULT 'POST',
+                url          TEXT NOT NULL,
+                headers_json TEXT DEFAULT '{}',
+                body_template TEXT DEFAULT '{}',
+                enabled      INTEGER DEFAULT 1,
+                created      TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
+            )''')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_actions_agent ON agent_actions(agent_id)')
         db.commit()
         db.close()
     except Exception as e:
-        app.logger.error(f'Brain column migration error: {e}')
+        app.logger.error(f'Brain/actions migration error: {e}')
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -330,6 +360,82 @@ def call_openrouter(messages, model, api_key):
     except Exception as e:
         app.logger.error(f'OpenRouter error: {type(e).__name__}: {e}')
         return f"⚠️ Unexpected error: {type(e).__name__}: {str(e)[:200]}"
+
+
+# ── Action Execution Engine ───────────────────────────────────────────────────
+
+def build_actions_prompt(actions):
+    """Build tool-use instructions injected into the system prompt."""
+    if not actions:
+        return ""
+    lines = [
+        "\n\n---\n## ACTIONS YOU CAN PERFORM\n",
+        "When the user asks you to DO something inside the app, execute an action.",
+        "To execute an action, include EXACTLY this JSON block on its own line in your reply:",
+        '\n```action\n{"action": "ACTION_NAME", "params": {"key": "value"}}\n```\n',
+        "Available actions:"
+    ]
+    for a in actions:
+        lines.append(f"- **{a['name']}**: {a['description']}")
+    lines.append("\nAfter the action block, continue your reply explaining what you did.")
+    lines.append("Only execute an action when the user explicitly asks you to DO something.")
+    lines.append("---")
+    return "\n".join(lines)
+
+def execute_action(action, params, agent_api_key):
+    """Execute a single action — HTTP call to the target app."""
+    url = action["url"]
+    for k, v in params.items():
+        url = url.replace("{" + k + "}", str(v))
+
+    try:
+        headers = json.loads(action["headers_json"] or "{}")
+    except Exception:
+        headers = {}
+    if "Authorization" not in headers and agent_api_key:
+        headers["Authorization"] = f"Bearer {agent_api_key}"
+    headers["Content-Type"] = "application/json"
+
+    try:
+        body_str = action["body_template"] or "{}"
+        for k, v in params.items():
+            body_str = body_str.replace("{" + k + "}", str(v))
+        body = json.loads(body_str)
+        body.update({k: v for k, v in params.items() if k not in body})
+    except Exception:
+        body = dict(params)
+
+    try:
+        method = (action["method"] or "POST").upper()
+        if method == "GET":
+            r = _req.get(url, headers=headers, params=params, timeout=15)
+        elif method == "DELETE":
+            r = _req.delete(url, headers=headers, timeout=15)
+        else:
+            r = _req.post(url, headers=headers, json=body, timeout=15)
+        try:
+            result = r.json()
+        except Exception:
+            result = {"text": r.text[:500]}
+        return {"ok": r.ok, "status": r.status_code, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def parse_action_call(reply_text):
+    """Extract action JSON block from AI reply."""
+    import re
+    match = re.search(r'```action\s*\n({.*?})\s*\n```', reply_text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            pass
+    return None
+
+def strip_action_block(reply_text):
+    """Remove the ```action ... ``` block from visible reply."""
+    import re
+    return re.sub(r'```action\s*\n.*?\n```\n?', '', reply_text, flags=re.DOTALL).strip()
 
 # ── Public pages ──────────────────────────────────────────────────────────────
 
@@ -685,6 +791,15 @@ def chat(agent_id):
         if mem and mem['summary']:
             system_content += f'\n\n---\nVISITOR MEMORY (returning user):\n{mem["summary"]}\n---'
 
+    # ── Inject available actions ──
+    actions = db.execute(
+        'SELECT * FROM agent_actions WHERE agent_id=? AND enabled=1 ORDER BY id',
+        (agent_id,)
+    ).fetchall()
+    actions_list = [dict(a) for a in actions]
+    if actions_list:
+        system_content += build_actions_prompt(actions_list)
+
     messages = [{'role': 'system', 'content': system_content}]
     for h in history[-10:]:
         if h.get('role') in ('user', 'assistant') and h.get('content'):
@@ -692,6 +807,21 @@ def chat(agent_id):
     messages.append({'role': 'user', 'content': user_msg})
 
     reply = call_openrouter(messages, model, agent['api_key'])
+
+    # ── Execute action if AI called one ──
+    action_result_text = ''
+    action_call = parse_action_call(reply)
+    if action_call and actions_list:
+        action_name = action_call.get('action', '')
+        params      = action_call.get('params', {})
+        matched     = next((a for a in actions_list if a['name'] == action_name), None)
+        if matched:
+            exec_result = execute_action(matched, params, agent['api_key'])
+            if exec_result.get('ok'):
+                action_result_text = f'\n\n✅ Action **{action_name}** executed successfully.'
+            else:
+                action_result_text = f'\n\n⚠️ Action **{action_name}** failed: {exec_result.get("error", exec_result.get("result", ""))}'
+        reply = strip_action_block(reply) + action_result_text
 
     # Log message + increment counter
     db.execute('INSERT INTO messages(agent_id,role,content,session_id) VALUES(?,?,?,?)',
@@ -802,6 +932,86 @@ def agent_brain_update(agent_id):
         db.execute('UPDATE agents SET memory_md=? WHERE id=?', (memory_md.strip(), agent_id))
         db.commit()
     return jsonify({'ok': True})
+
+
+# ── Agent Actions (CRUD) ─────────────────────────────────────────────────────
+
+@app.route('/agent/<agent_id>/actions')
+@login_required
+def agent_actions_page(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        flash('Agent not found.', 'error')
+        return redirect(url_for('dashboard'))
+    actions = db.execute('SELECT * FROM agent_actions WHERE agent_id=? ORDER BY id',
+                         (agent_id,)).fetchall()
+    return render_template('agent_actions.html', agent=agent, actions=actions)
+
+@app.route('/agent/<agent_id>/actions/add', methods=['POST'])
+@login_required
+def agent_action_add(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT id FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    name         = request.form.get('name', '').strip()
+    description  = request.form.get('description', '').strip()
+    method       = request.form.get('method', 'POST').strip().upper()
+    url_val      = request.form.get('url', '').strip()
+    headers_json = request.form.get('headers_json', '{}').strip() or '{}'
+    body_tpl     = request.form.get('body_template', '{}').strip() or '{}'
+    if not name or not url_val:
+        flash('Action name and URL are required.', 'error')
+        return redirect(url_for('agent_actions_page', agent_id=agent_id))
+    try: json.loads(headers_json)
+    except Exception: headers_json = '{}'
+    try: json.loads(body_tpl)
+    except Exception: body_tpl = '{}'
+    db.execute(
+        'INSERT INTO agent_actions (agent_id,name,description,method,url,headers_json,body_template) '
+        'VALUES (?,?,?,?,?,?,?)',
+        (agent_id, name, description, method, url_val, headers_json, body_tpl))
+    db.commit()
+    flash(f'Action "{name}" added!', 'success')
+    return redirect(url_for('agent_actions_page', agent_id=agent_id))
+
+@app.route('/agent/<agent_id>/actions/<int:action_id>/toggle', methods=['POST'])
+@login_required
+def agent_action_toggle(agent_id, action_id):
+    db = get_db()
+    a = db.execute('SELECT enabled FROM agent_actions WHERE id=? AND agent_id=?',
+                   (action_id, agent_id)).fetchone()
+    if a:
+        db.execute('UPDATE agent_actions SET enabled=? WHERE id=?',
+                   (0 if a['enabled'] else 1, action_id))
+        db.commit()
+    return redirect(url_for('agent_actions_page', agent_id=agent_id))
+
+@app.route('/agent/<agent_id>/actions/<int:action_id>/delete', methods=['POST'])
+@login_required
+def agent_action_delete(agent_id, action_id):
+    db = get_db()
+    db.execute('DELETE FROM agent_actions WHERE id=? AND agent_id=?', (action_id, agent_id))
+    db.commit()
+    flash('Action deleted.', 'success')
+    return redirect(url_for('agent_actions_page', agent_id=agent_id))
+
+@app.route('/agent/<agent_id>/actions/<int:action_id>/test', methods=['POST'])
+@login_required
+def agent_action_test(agent_id, action_id):
+    db    = get_db()
+    agent  = db.execute('SELECT api_key FROM agents WHERE id=? AND user_id=?',
+                        (agent_id, session['user_id'])).fetchone()
+    action = db.execute('SELECT * FROM agent_actions WHERE id=? AND agent_id=?',
+                        (action_id, agent_id)).fetchone()
+    if not agent or not action:
+        return jsonify({'error': 'not found'}), 404
+    params = (request.get_json(silent=True) or {}).get('params', {})
+    result = execute_action(dict(action), params, agent['api_key'])
+    return jsonify(result)
 
 # ── Knowledge Base ──────────────────────────────────────────────────────────────
 

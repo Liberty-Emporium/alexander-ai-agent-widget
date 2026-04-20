@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} — Actions{% endblock %}
+{% block extra_css %}
+<style>
+  .action-card {
+    background:#111827; border:1px solid rgba(255,255,255,.08);
+    border-radius:12px; padding:1.25rem; margin-bottom:1rem;
+    transition:border-color .15s;
+  }
+  .action-card:hover { border-color:rgba(99,102,241,.4); }
+  .action-card.disabled { opacity:.5; }
+  .action-header { display:flex; align-items:center; gap:10px; margin-bottom:.75rem; flex-wrap:wrap; }
+  .action-name { font-weight:700; font-size:.95rem; flex:1; }
+  .method-badge {
+    font-size:.68rem; font-weight:800; padding:3px 8px; border-radius:5px;
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .method-POST  { background:rgba(99,102,241,.2); color:#818cf8; }
+  .method-GET   { background:rgba(16,185,129,.2); color:#34d399; }
+  .method-DELETE{ background:rgba(239,68,68,.2);  color:#f87171; }
+  .action-url { font-family:monospace; font-size:.8rem; color:#6b7280; word-break:break-all; margin-bottom:.5rem; }
+  .action-desc { font-size:.84rem; color:#9ca3af; margin-bottom:.75rem; }
+  .action-btns { display:flex; gap:8px; flex-wrap:wrap; }
+
+  .form-card { background:#0d1117; border:1px solid rgba(99,102,241,.25); border-radius:12px; padding:1.5rem; margin-bottom:2rem; }
+  .form-row  { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+  .form-row-3{ display:grid; grid-template-columns:1fr 2fr 100px; gap:1rem; }
+
+  .info-box {
+    background:rgba(99,102,241,.07); border:1px solid rgba(99,102,241,.2);
+    border-radius:8px; padding:.875rem 1rem; font-size:.82rem; color:#94a3b8; line-height:1.7; margin-bottom:1.5rem;
+  }
+  .info-box strong { color:#a78bfa; }
+  .info-box code { background:#0d1117; padding:1px 6px; border-radius:4px; font-size:.78rem; }
+
+  textarea.code-area {
+    font-family:'Fira Code','Courier New',monospace; font-size:.8rem;
+    background:#0a0a0f; border:1px solid rgba(255,255,255,.1); border-radius:8px;
+    color:#e2e8f0; padding:10px 12px; resize:vertical; min-height:80px; width:100%; outline:none;
+  }
+  textarea.code-area:focus { border-color:#6366f1; }
+
+  .test-result {
+    display:none; margin-top:.75rem; padding:.75rem 1rem; border-radius:8px;
+    font-family:monospace; font-size:.78rem; line-height:1.6; white-space:pre-wrap; word-break:break-all;
+  }
+  .test-ok   { background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.25); color:#34d399; }
+  .test-fail { background:rgba(239,68,68,.1);  border:1px solid rgba(239,68,68,.25);  color:#f87171; }
+
+  .empty-state { text-align:center; padding:3rem 1rem; color:#4b5563; }
+  .empty-icon  { font-size:2.5rem; margin-bottom:.75rem; }
+
+  .quick-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:.75rem; }
+  .qa-btn {
+    padding:4px 12px; background:rgba(99,102,241,.1); border:1px solid rgba(99,102,241,.2);
+    border-radius:20px; font-size:.74rem; color:#818cf8; cursor:pointer;
+    transition:all .15s; font-family:'Inter',sans-serif;
+  }
+  .qa-btn:hover { background:rgba(99,102,241,.25); color:#fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:860px; padding-top:2rem;">
+
+  <!-- Header -->
+  <div style="margin-bottom:1.5rem;">
+    <a href="/agent/{{ agent.id }}" style="color:#6b7280;font-size:.88rem;">← Back to {{ agent.name }}</a>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:.75rem;flex-wrap:wrap;">
+      <div style="width:46px;height:46px;border-radius:50%;background:{{ agent.color }}20;display:flex;align-items:center;justify-content:center;font-size:22px;">{{ agent.avatar }}</div>
+      <div style="flex:1">
+        <h1 style="font-size:1.4rem;font-weight:800;">{{ agent.name }} — Actions</h1>
+        <p style="color:#6b7280;font-size:.85rem;">Define what {{ agent.name }} can DO inside your app. Each action is an API call the agent can make when a user asks.</p>
+      </div>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' }}" style="margin-bottom:1rem;">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- How it works -->
+  <div class="info-box">
+    <strong>How Actions Work:</strong> When a user asks {{ agent.name }} to DO something (e.g. "create a claim", "add a room", "look up my order"), the agent detects the intent, picks the right action, fills in the parameters, and makes the API call to your app — then reports back what happened.<br><br>
+    <strong>URL placeholders:</strong> Use <code>{param_name}</code> in URLs and body templates. Example: <code>https://billy-floods.up.railway.app/claims/{claim_id}/room/add</code><br>
+    <strong>Auth:</strong> The agent's OpenRouter API key is sent as <code>Authorization: Bearer &lt;key&gt;</code> unless you override it in Headers JSON.
+  </div>
+
+  <!-- Add Action Form -->
+  <div class="form-card">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:1.25rem;">➕ Add New Action</h3>
+    <form method="POST" action="/agent/{{ agent.id }}/actions/add">
+
+      <div class="form-row" style="margin-bottom:1rem;">
+        <div class="form-group" style="margin:0">
+          <label>Action Name *</label>
+          <input type="text" name="name" placeholder="create_claim" required
+                 style="font-family:monospace;" maxlength="60">
+          <p style="font-size:.72rem;color:#4b5563;margin-top:3px;">No spaces — use_underscores</p>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Method</label>
+          <select name="method">
+            <option value="POST">POST</option>
+            <option value="GET">GET</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Description * <span style="color:#4b5563;font-weight:400;font-size:.78rem;">(the agent reads this to know when to use this action)</span></label>
+        <input type="text" name="description" placeholder="Create a new flood damage claim with client name, address, and flood date" required maxlength="200">
+      </div>
+
+      <div class="form-group">
+        <label>URL * <span style="color:#4b5563;font-weight:400;font-size:.78rem;">(use {param} placeholders)</span></label>
+        <input type="text" name="url" placeholder="https://billy-floods.up.railway.app/claims/new" required style="font-family:monospace;font-size:.85rem;">
+      </div>
+
+      <div class="form-row" style="margin-bottom:1rem;">
+        <div class="form-group" style="margin:0">
+          <label>Headers JSON <span style="color:#4b5563;font-weight:400;font-size:.78rem;">(optional override)</span></label>
+          <textarea name="headers_json" class="code-area" rows="3" placeholder='{"X-Agent-Key": "your-key"}'>{}</textarea>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Body Template JSON <span style="color:#4b5563;font-weight:400;font-size:.78rem;">(params auto-merged)</span></label>
+          <textarea name="body_template" class="code-area" rows="3" placeholder='{"client_name": "{client_name}", "flood_date": "{flood_date}"}'>{}</textarea>
+        </div>
+      </div>
+
+      <!-- Quick-fill templates -->
+      <div style="margin-bottom:1rem;">
+        <span style="font-size:.75rem;color:#4b5563;">Quick fill for FloodClaim Pro:</span>
+        <div class="quick-actions">
+          <button type="button" class="qa-btn" onclick="fillAction('create_claim','POST','Create a new flood damage claim. Params: client_name, property_address, flood_date','https://billy-floods.up.railway.app/claims/new','{}','{}')">🌊 Create Claim</button>
+          <button type="button" class="qa-btn" onclick="fillAction('add_room','POST','Add a room to an existing claim. Params: claim_id, room_name','https://billy-floods.up.railway.app/claims/{claim_id}/room/add','{}',\'{\"room_name\":\"{room_name}\"}\')">🏠 Add Room</button>
+          <button type="button" class="qa-btn" onclick="fillAction('update_status','POST','Update the status of a claim. Params: claim_id, status (New/In Progress/Submitted/Closed)','https://billy-floods.up.railway.app/claims/{claim_id}/status','{}',\'{\"status\":\"{status}\"}\')">📋 Update Status</button>
+          <button type="button" class="qa-btn" onclick="fillAction('get_dashboard','GET','Get the current dashboard overview and claim stats','https://billy-floods.up.railway.app/dashboard','{}','{}')">📊 Get Dashboard</button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">➕ Add Action</button>
+    </form>
+  </div>
+
+  <!-- Existing Actions -->
+  <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem;">
+    ⚡ Active Actions
+    <span style="font-size:.78rem;font-weight:400;color:#4b5563;margin-left:8px;">{{ actions|length }} defined</span>
+  </h3>
+
+  {% if actions %}
+    {% for action in actions %}
+    <div class="action-card {{ 'disabled' if not action.enabled else '' }}" id="action-{{ action.id }}">
+      <div class="action-header">
+        <span class="method-badge method-{{ action.method }}">{{ action.method }}</span>
+        <span class="action-name">{{ action.name }}</span>
+        <span style="font-size:.72rem;color:{{ '#10b981' if action.enabled else '#4b5563' }};">
+          {{ '● Enabled' if action.enabled else '○ Disabled' }}
+        </span>
+      </div>
+      <div class="action-desc">{{ action.description }}</div>
+      <div class="action-url">🔗 {{ action.url }}</div>
+
+      <div class="action-btns">
+        <button class="btn btn-outline btn-sm" onclick="testAction({{ action.id }}, this)">🧪 Test</button>
+        <form method="POST" action="/agent/{{ agent.id }}/actions/{{ action.id }}/toggle" style="display:inline">
+          <button type="submit" class="btn btn-outline btn-sm">
+            {{ '⏸ Disable' if action.enabled else '▶ Enable' }}
+          </button>
+        </form>
+        <form method="POST" action="/agent/{{ agent.id }}/actions/{{ action.id }}/delete" style="display:inline"
+              onsubmit="return confirm('Delete this action?')">
+          <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
+        </form>
+      </div>
+
+      <!-- Test result area -->
+      <div class="test-result" id="test-result-{{ action.id }}"></div>
+
+      {% if action.body_template and action.body_template != '{}' %}
+      <details style="margin-top:.75rem;">
+        <summary style="font-size:.75rem;color:#4b5563;cursor:pointer;">View body template</summary>
+        <pre style="background:#0a0a0f;border-radius:6px;padding:.75rem;font-size:.75rem;color:#818cf8;margin-top:.5rem;overflow-x:auto;">{{ action.body_template }}</pre>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⚡</div>
+    <p style="font-weight:600;margin-bottom:.5rem;">No actions yet</p>
+    <p style="font-size:.85rem;">Add your first action above so {{ agent.name }} can DO things in your app.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function fillAction(name, method, desc, url, headers, body) {
+  document.querySelector('[name=name]').value = name;
+  document.querySelector('[name=method]').value = method;
+  document.querySelector('[name=description]').value = desc;
+  document.querySelector('[name=url]').value = url;
+  document.querySelector('[name=headers_json]').value = headers;
+  document.querySelector('[name=body_template]').value = body;
+  document.querySelector('[name=name]').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function testAction(actionId, btn) {
+  const resultEl = document.getElementById('test-result-' + actionId);
+  const params = {};
+  // Prompt for params if the URL has placeholders
+  const urlEl = btn.closest('.action-card').querySelector('.action-url');
+  const urlText = urlEl ? urlEl.textContent : '';
+  const matches = urlText.match(/\{(\w+)\}/g);
+  if (matches) {
+    for (const m of matches) {
+      const key = m.replace(/[{}]/g, '');
+      const val = prompt(`Enter value for {${key}}:`);
+      if (val === null) return;
+      params[key] = val;
+    }
+  }
+
+  btn.textContent = '⏳ Testing...';
+  btn.disabled = true;
+  resultEl.style.display = 'none';
+
+  try {
+    const r = await fetch(`/agent/{{ agent.id }}/actions/${actionId}/test`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({params})
+    });
+    const data = await r.json();
+    resultEl.className = 'test-result ' + (data.ok ? 'test-ok' : 'test-fail');
+    resultEl.textContent = JSON.stringify(data, null, 2);
+    resultEl.style.display = 'block';
+  } catch(e) {
+    resultEl.className = 'test-result test-fail';
+    resultEl.textContent = 'Network error: ' + e.message;
+    resultEl.style.display = 'block';
+  }
+
+  btn.textContent = '🧪 Test';
+  btn.disabled = false;
+}
+</script>
+{% endblock %}
