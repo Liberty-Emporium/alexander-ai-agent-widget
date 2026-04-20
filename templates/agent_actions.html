@@ -135,10 +135,10 @@
       <div style="margin-bottom:1rem;">
         <span style="font-size:.75rem;color:#4b5563;">Quick fill for FloodClaim Pro:</span>
         <div class="quick-actions">
-          <button type="button" class="qa-btn" onclick="fillAction('create_claim','POST','Create a new flood damage claim. Params: client_name, property_address, flood_date','https://billy-floods.up.railway.app/claims/new','{}','{}')">🌊 Create Claim</button>
-          <button type="button" class="qa-btn" onclick="fillAction('add_room','POST','Add a room to an existing claim. Params: claim_id, room_name','https://billy-floods.up.railway.app/claims/{claim_id}/room/add','{}',\'{\"room_name\":\"{room_name}\"}\')">🏠 Add Room</button>
-          <button type="button" class="qa-btn" onclick="fillAction('update_status','POST','Update the status of a claim. Params: claim_id, status (New/In Progress/Submitted/Closed)','https://billy-floods.up.railway.app/claims/{claim_id}/status','{}',\'{\"status\":\"{status}\"}\')">📋 Update Status</button>
-          <button type="button" class="qa-btn" onclick="fillAction('get_dashboard','GET','Get the current dashboard overview and claim stats','https://billy-floods.up.railway.app/dashboard','{}','{}')">📊 Get Dashboard</button>
+          <button type="button" class="qa-btn" onclick="fillPreset(0)">🌊 Create Claim</button>
+          <button type="button" class="qa-btn" onclick="fillPreset(1)">🏠 Add Room</button>
+          <button type="button" class="qa-btn" onclick="fillPreset(2)">📋 Update Status</button>
+          <button type="button" class="qa-btn" onclick="fillPreset(3)">📊 Get Dashboard</button>
         </div>
       </div>
 
@@ -270,6 +270,46 @@ Content-Type: application/json
 
 {% block extra_js %}
 <script>
+const PRESETS = [
+  {
+    name: 'create_claim',
+    method: 'POST',
+    description: 'Create a new flood damage claim. Params: client_name, property_address, flood_date',
+    url: 'https://billy-floods.up.railway.app/claims/new',
+    headers: '{}',
+    body: '{"client_name":"{client_name}","property_address":"{property_address}","flood_date":"{flood_date}"}'
+  },
+  {
+    name: 'add_room',
+    method: 'POST',
+    description: 'Add a room to an existing claim. Params: claim_id, room_name',
+    url: 'https://billy-floods.up.railway.app/claims/{claim_id}/room/add',
+    headers: '{}',
+    body: '{"room_name":"{room_name}"}'
+  },
+  {
+    name: 'update_status',
+    method: 'POST',
+    description: 'Update the status of a claim. Params: claim_id, status (New/In Progress/Submitted/Closed)',
+    url: 'https://billy-floods.up.railway.app/claims/{claim_id}/status',
+    headers: '{}',
+    body: '{"status":"{status}"}'
+  },
+  {
+    name: 'get_dashboard',
+    method: 'GET',
+    description: 'Get the current dashboard overview and claim stats',
+    url: 'https://billy-floods.up.railway.app/dashboard',
+    headers: '{}',
+    body: '{}'
+  }
+];
+
+function fillPreset(idx) {
+  const p = PRESETS[idx];
+  fillAction(p.name, p.method, p.description, p.url, p.headers, p.body);
+}
+
 function fillAction(name, method, desc, url, headers, body) {
   document.querySelector('[name=name]').value = name;
   document.querySelector('[name=method]').value = method;
