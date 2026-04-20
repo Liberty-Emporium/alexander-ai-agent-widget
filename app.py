@@ -470,6 +470,39 @@ def old_index():
 def pricing():
     return render_template('pricing.html')
 
+
+@app.route('/api/analyze-photo-public', methods=['POST', 'OPTIONS'])
+def analyze_photo_public():
+    """Public endpoint — widget calls this to AI-analyze a photo before sending."""
+    if request.method == 'OPTIONS':
+        return '', 204
+    data     = request.get_json(silent=True) or {}
+    img_b64  = data.get('image', '')
+    mime     = data.get('mime', 'image/jpeg')
+    agent_id = data.get('agent_id', '')
+    if not img_b64 or not agent_id:
+        return jsonify({'description': ''})
+    db    = get_db()
+    agent = db.execute('SELECT api_key, model FROM agents WHERE id=?', (agent_id,)).fetchone()
+    if not agent or not agent['api_key']:
+        return jsonify({'description': ''})
+    try:
+        model = normalize_model(agent['model'] or 'openai/gpt-4o-mini')
+        reply = call_openrouter([{
+            'role': 'user',
+            'content': [
+                {'type': 'text', 'text': (
+                    'You are a professional flood damage adjuster. In 1-2 sentences, '
+                    'describe the damage visible in this photo: what is damaged, severity, '
+                    'and key repair needs. Be concise and professional.'
+                )},
+                {'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{img_b64}'}}
+            ]
+        }], model, agent['api_key'])
+        return jsonify({'description': reply if not reply.startswith('⚠️') else ''})
+    except Exception:
+        return jsonify({'description': ''})
+
 @app.route('/health')
 def health():
     try:

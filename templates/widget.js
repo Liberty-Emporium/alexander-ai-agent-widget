@@ -196,8 +196,31 @@
       display:flex; align-items:center; justify-content:center;
       flex-shrink:0; transition:opacity .2s;
     }
+    #aai-attach {
+      width:34px; height:34px; border-radius:50%; background:#f3f4f6;
+      color:#6b7280; border:none; cursor:pointer; font-size:17px;
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; transition:all .2s;
+    }
+    #aai-attach:hover { background:#e5e7eb; color:#374151; }
     #aai-send:hover { opacity:.85; }
     #aai-send:disabled { opacity:.4; cursor:not-allowed; }
+    #aai-photo-preview {
+      display:none; flex-wrap:wrap; gap:6px;
+      padding:8px 12px; border-bottom:1px solid #e5e7eb; background:#f9fafb;
+    }
+    #aai-photo-preview.has-photos { display:flex; }
+    .aai-prev-wrap { position:relative; border-radius:8px; overflow:hidden; flex-shrink:0; }
+    .aai-prev-wrap img { width:56px; height:56px; object-fit:cover; display:block; }
+    .aai-prev-rm {
+      position:absolute; top:2px; right:2px; width:16px; height:16px;
+      background:rgba(0,0,0,.55); border:none; border-radius:50%; color:#fff;
+      font-size:9px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    }
+    .aai-ai-tag {
+      font-size:10px; color:#6b7280; max-width:80px; line-height:1.3;
+      text-align:center; word-break:break-word;
+    }
     #aai-branding { text-align:center; font-size:10px; color:#9ca3af; padding:3px 0 6px; }
     #aai-branding a { color:${COLOR}; text-decoration:none; }
 
@@ -241,7 +264,10 @@
         </div>
         <div id="aai-msgs"></div>
         <div id="aai-footer">
+          <div id="aai-photo-preview"></div>
           <form id="aai-form">
+            <button id="aai-attach" type="button" title="Attach photo">📎</button>
+            <input id="aai-file" type="file" accept="image/*" multiple style="display:none">
             <input id="aai-input" type="text" placeholder="Ask me anything..." autocomplete="off" maxlength="2000">
             <button id="aai-send" type="submit">➤</button>
           </form>
@@ -396,46 +422,118 @@
     }, 50);
   }
 
+  // ── Photo attach ──
+  var pendingPhotos = [];
+
+  document.getElementById('aai-attach').addEventListener('click', function() {
+    document.getElementById('aai-file').click();
+  });
+
+  document.getElementById('aai-file').addEventListener('change', function() {
+    Array.from(this.files).forEach(function(file) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var item = {file:file, b64:e.target.result, aiDesc:'analyzing...'};
+        pendingPhotos.push(item);
+        renderPhotoPreview();
+        analyzePhoto(item, pendingPhotos.length - 1);
+      };
+      reader.readAsDataURL(file);
+    });
+    this.value = '';
+  });
+
+  function renderPhotoPreview() {
+    var wrap = document.getElementById('aai-photo-preview');
+    if (!pendingPhotos.length) { wrap.classList.remove('has-photos'); wrap.innerHTML=''; return; }
+    wrap.classList.add('has-photos');
+    wrap.innerHTML = pendingPhotos.map(function(p, i) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">'
+        + '<div class="aai-prev-wrap">'
+        + '<img src="'+p.b64+'"/>'
+        + '<button class="aai-prev-rm" onclick="aaiRemovePhoto('+i+')">\u2715</button>'
+        + '</div>'
+        + '<div class="aai-ai-tag">'+(p.aiDesc==='analyzing...'?'\u23f3...':p.aiDesc?'\ud83e\udd16 '+p.aiDesc.slice(0,40)+'\u2026':'')+'</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  window.aaiRemovePhoto = function(i) {
+    pendingPhotos.splice(i, 1);
+    renderPhotoPreview();
+  };
+
+  function analyzePhoto(item, idx) {
+    var b64pure = item.b64.split(',')[1];
+    fetch(BASE_URL + '/api/analyze-photo-public', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image:b64pure, mime:item.file.type, agent_id:AGENT_ID})
+    })
+    .then(function(r){return r.json();})
+    .then(function(data){ item.aiDesc = data.description || ''; renderPhotoPreview(); })
+    .catch(function(){ item.aiDesc = ''; renderPhotoPreview(); });
+  }
+
   // ── Send message ──
   document.getElementById('aai-form').addEventListener('submit', function(e) {
     e.preventDefault();
     var input = document.getElementById('aai-input');
     var send  = document.getElementById('aai-send');
     var text  = input.value.trim();
-    if (!text) return;
+    if (!text && !pendingPhotos.length) return;
 
     closeHistPanel();
-    input.value = '';
-    addMsg('user', text);
-    history.push({role:'user', content:text});
 
-    // Auto-title from first user message
-    if (history.filter(function(m){return m.role==='user';}).length === 1) {
-      currentTitle = text.slice(0, 48) + (text.length > 48 ? '…' : '');
+    // Build message content — include AI photo descriptions
+    var photoDescs = pendingPhotos.filter(function(p){return p.aiDesc && p.aiDesc!=='analyzing...';}).map(function(p){return p.aiDesc;});
+    var msgContent = text;
+    if (photoDescs.length) {
+      msgContent = (text?text+'\n\n':'') + '['+pendingPhotos.length+' photo(s) attached]\nAI analysis:\n' + photoDescs.join('\n');
     }
 
+    // Show user bubble with thumbnails
+    var msgs = document.getElementById('aai-msgs');
+    document.getElementById('welcome') && document.getElementById('welcome').remove();
+    var userDiv = document.createElement('div');
+    userDiv.className = 'aai-msg user';
+    var thumbs = pendingPhotos.map(function(p){
+      return '<img src="'+p.b64+'" style="width:72px;height:54px;object-fit:cover;border-radius:6px;margin-top:5px;display:block">';
+    }).join('');
+    userDiv.innerHTML = (text ? text.replace(/</g,'&lt;') : '') + thumbs;
+    msgs.appendChild(userDiv);
+    msgs.scrollTop = msgs.scrollHeight;
+
+    history.push({role:'user', content: msgContent || '[Photo attached]'});
+    if (history.filter(function(m){return m.role==='user';}).length===1) {
+      currentTitle = (text || 'Photo').slice(0,48);
+    }
+
+    pendingPhotos = [];
+    renderPhotoPreview();
+    input.value = '';
     saveState();
     send.disabled = true;
     setTyping(true);
 
     fetch(BASE_URL + '/chat/' + AGENT_ID, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message:text, history:history.slice(-12), session_id:sessionId})
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msgContent||'[Photo attached]', history:history.slice(-12), session_id:sessionId})
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r){return r.json();})
     .then(function(data) {
       setTyping(false);
       var reply = data.reply || data.error || 'Something went wrong.';
       addMsg('bot', reply);
       history.push({role:'assistant', content:reply});
-      if (history.length > 40) history = history.slice(-40);
+      if (history.length>40) history=history.slice(-40);
       saveState();
     })
-    .catch(function() {
+    .catch(function(){
       setTyping(false);
-      addMsg('bot', 'Connection error. Please try again.');
+      addMsg('bot','Connection error. Please try again.');
     })
-    .finally(function() { send.disabled = false; });
+    .finally(function(){ send.disabled=false; });
   });
 })();
