@@ -198,6 +198,74 @@
   {% endif %}
 
 </div>
+  <!-- ── Self-Management API Reference Card ── -->
+  <div class="card" style="margin-top:2rem;border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.04);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
+      <span style="font-size:1.4rem;">🤖</span>
+      <div>
+        <h3 style="font-size:1rem;font-weight:700;margin:0;">{{ agent.name }}'s Self-Management API</h3>
+        <p style="font-size:.8rem;color:#6b7280;margin:0;">Give this to {{ agent.name }} and he can create his own actions.</p>
+      </div>
+    </div>
+
+    <div style="font-size:.82rem;color:#9ca3af;line-height:1.8;margin-bottom:1.25rem;">
+      {{ agent.name }} already knows about this API — it's injected into his system prompt automatically.
+      Share it with him in chat: <em>"Willie, your API key is below. Use it to add new actions whenever you need them."</em>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:.75rem;">
+
+      <!-- Add Action -->
+      <div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f59e0b;margin-bottom:.4rem;">POST — Add / Update an Action</div>
+        <div class="embed-box" id="api-add" style="font-size:.76rem;line-height:1.8;">
+POST {{ request.host_url.rstrip('/') }}/agent/{{ agent.id }}/actions/api
+Authorization: Bearer {{ agent.api_key }}
+Content-Type: application/json
+
+{
+  "name": "action_name",
+  "description": "When to use this action",
+  "method": "POST",
+  "url": "https://your-app.com/endpoint",
+  "body": {"param": "{param}"}
+}</div>
+        <button class="btn btn-outline btn-sm copy-btn" style="margin-top:6px;" onclick="copyBlock('api-add', this)">📋 Copy</button>
+      </div>
+
+      <!-- List Actions -->
+      <div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#10b981;margin-bottom:.4rem;">GET — List Current Actions</div>
+        <div class="embed-box" id="api-list" style="font-size:.76rem;">
+GET {{ request.host_url.rstrip('/') }}/agent/{{ agent.id }}/actions/api
+Authorization: Bearer {{ agent.api_key }}</div>
+        <button class="btn btn-outline btn-sm copy-btn" style="margin-top:6px;" onclick="copyBlock('api-list', this)">📋 Copy</button>
+      </div>
+
+      <!-- Delete Action -->
+      <div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f87171;margin-bottom:.4rem;">DELETE — Remove an Action</div>
+        <div class="embed-box" id="api-del" style="font-size:.76rem;">
+DELETE {{ request.host_url.rstrip('/') }}/agent/{{ agent.id }}/actions/api
+Authorization: Bearer {{ agent.api_key }}
+Content-Type: application/json
+
+{"name": "action_name"}</div>
+        <button class="btn btn-outline btn-sm copy-btn" style="margin-top:6px;" onclick="copyBlock('api-del', this)">📋 Copy</button>
+      </div>
+
+    </div>
+
+    <div style="margin-top:1.25rem;padding:.875rem 1rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;font-size:.82rem;color:#94a3b8;line-height:1.7;">
+      <strong style="color:#f59e0b;">Example:</strong> Tell {{ agent.name }} in chat:<br>
+      <em style="color:#e2e8f0;">"⚡ Willie, I need you to be able to update insurance info on a claim.
+      Your API key is <code style="font-size:.75rem;">{{ agent.api_key[:12] }}•••</code> and your actions endpoint is
+      {{ request.host_url.rstrip('/') }}/agent/{{ agent.id }}/actions/api — go ahead and add that action."</em><br><br>
+      Willie will call the API himself and the new action will appear on this page instantly.
+    </div>
+  </div>
+
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -210,6 +278,15 @@ function fillAction(name, method, desc, url, headers, body) {
   document.querySelector('[name=headers_json]').value = headers;
   document.querySelector('[name=body_template]').value = body;
   document.querySelector('[name=name]').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function copyBlock(elId, btn) {
+  const text = document.getElementById(elId).textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  });
 }
 
 async function testAction(actionId, btn) {

@@ -364,21 +364,40 @@ def call_openrouter(messages, model, api_key):
 
 # ── Action Execution Engine ───────────────────────────────────────────────────
 
-def build_actions_prompt(actions):
+def build_actions_prompt(actions, agent_id, agent_api_key, base_url):
     """Build tool-use instructions injected into the system prompt."""
-    if not actions:
-        return ""
     lines = [
         "\n\n---\n## ACTIONS YOU CAN PERFORM\n",
         "When the user asks you to DO something inside the app, execute an action.",
         "To execute an action, include EXACTLY this JSON block on its own line in your reply:",
         '\n```action\n{"action": "ACTION_NAME", "params": {"key": "value"}}\n```\n',
-        "Available actions:"
     ]
-    for a in actions:
-        lines.append(f"- **{a['name']}**: {a['description']}")
+    if actions:
+        lines.append("Available actions:")
+        for a in actions:
+            lines.append(f"- **{a['name']}**: {a['description']}")
+    else:
+        lines.append("You have no actions defined yet — but you can create them yourself (see below).")
     lines.append("\nAfter the action block, continue your reply explaining what you did.")
     lines.append("Only execute an action when the user explicitly asks you to DO something.")
+    # Self-management API
+    lines.append(f"""
+## SELF-MANAGEMENT: You can add your OWN actions
+If you need a capability you don't have yet, call this API to add it:
+
+POST {base_url}/agent/{agent_id}/actions/api
+Authorization: Bearer {agent_api_key}
+Content-Type: application/json
+
+Body:
+{{"name":"action_name","description":"when to use it","method":"POST","url":"https://target-app.com/endpoint","body":{{"param":"{{param}}"}}}}
+
+You can also:
+- GET {base_url}/agent/{agent_id}/actions/api  — list your current actions
+- DELETE {base_url}/agent/{agent_id}/actions/api  — body: {{"name":"action_name"}}
+
+When a user asks you to do something you can't do yet, tell them you're adding the capability and call the API.
+""")
     lines.append("---")
     return "\n".join(lines)
 
@@ -797,8 +816,8 @@ def chat(agent_id):
         (agent_id,)
     ).fetchall()
     actions_list = [dict(a) for a in actions]
-    if actions_list:
-        system_content += build_actions_prompt(actions_list)
+    base_url = request.host_url.rstrip('/')
+    system_content += build_actions_prompt(actions_list, agent_id, agent['api_key'], base_url)
 
     messages = [{'role': 'system', 'content': system_content}]
     for h in history[-10:]:
@@ -1012,6 +1031,85 @@ def agent_action_test(agent_id, action_id):
     params = (request.get_json(silent=True) or {}).get('params', {})
     result = execute_action(dict(action), params, agent['api_key'])
     return jsonify(result)
+
+
+# ── Agent Self-Management API (Willie adds his own actions) ──────────────────
+
+@app.route('/agent/<agent_id>/actions/api', methods=['POST', 'GET', 'DELETE'])
+def agent_actions_api(agent_id):
+    """Public API — lets the agent manage its own actions using its API key as auth."""
+    auth  = request.headers.get('Authorization', '')
+    token = auth.replace('Bearer ', '').strip() if auth.startswith('Bearer ') else ''
+    db    = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=?', (agent_id,)).fetchone()
+    if not agent:
+        return jsonify({'ok': False, 'error': 'Agent not found'}), 404
+    if token != agent['api_key']:
+        return jsonify({'ok': False, 'error': 'Unauthorized — send your API key as Authorization: Bearer <key>'}), 401
+
+    # GET — list all actions
+    if request.method == 'GET':
+        actions = db.execute(
+            'SELECT id, name, description, method, url, enabled FROM agent_actions WHERE agent_id=? ORDER BY id',
+            (agent_id,)).fetchall()
+        return jsonify({'ok': True, 'actions': [dict(a) for a in actions]})
+
+    # DELETE — remove an action by name or id
+    if request.method == 'DELETE':
+        data   = request.get_json(silent=True) or {}
+        name   = data.get('name', '').strip()
+        act_id = data.get('id')
+        if act_id:
+            db.execute('DELETE FROM agent_actions WHERE id=? AND agent_id=?', (act_id, agent_id))
+        elif name:
+            db.execute('DELETE FROM agent_actions WHERE name=? AND agent_id=?', (name, agent_id))
+        else:
+            return jsonify({'ok': False, 'error': 'Provide name or id to delete'}), 400
+        db.commit()
+        return jsonify({'ok': True, 'message': 'Action deleted'})
+
+    # POST — add or update an action
+    data         = request.get_json(silent=True) or {}
+    name         = data.get('name', '').strip().replace(' ', '_')
+    description  = data.get('description', '').strip()
+    method       = data.get('method', 'POST').strip().upper()
+    url_val      = data.get('url', '').strip()
+    h            = data.get('headers', data.get('headers_json', {}))
+    b            = data.get('body',    data.get('body_template', {}))
+    headers_json = json.dumps(h) if isinstance(h, dict) else (h or '{}')
+    body_tpl     = json.dumps(b) if isinstance(b, dict) else (b or '{}')
+
+    if not name:
+        return jsonify({'ok': False, 'error': 'name is required'}), 400
+    if not url_val:
+        return jsonify({'ok': False, 'error': 'url is required'}), 400
+    if not description:
+        return jsonify({'ok': False, 'error': 'description is required'}), 400
+    if method not in ('GET', 'POST', 'DELETE'):
+        return jsonify({'ok': False, 'error': 'method must be GET, POST, or DELETE'}), 400
+
+    try: json.loads(headers_json)
+    except Exception: headers_json = '{}'
+    try: json.loads(body_tpl)
+    except Exception: body_tpl = '{}'
+
+    # Upsert — update if name already exists
+    existing = db.execute('SELECT id FROM agent_actions WHERE name=? AND agent_id=?',
+                          (name, agent_id)).fetchone()
+    if existing:
+        db.execute(
+            'UPDATE agent_actions SET description=?,method=?,url=?,headers_json=?,body_template=?,enabled=1 '
+            'WHERE name=? AND agent_id=?',
+            (description, method, url_val, headers_json, body_tpl, name, agent_id))
+        db.commit()
+        return jsonify({'ok': True, 'message': f'Action "{name}" updated', 'updated': True})
+
+    db.execute(
+        'INSERT INTO agent_actions (agent_id,name,description,method,url,headers_json,body_template) '
+        'VALUES (?,?,?,?,?,?,?)',
+        (agent_id, name, description, method, url_val, headers_json, body_tpl))
+    db.commit()
+    return jsonify({'ok': True, 'message': f'Action "{name}" created', 'created': True}), 201
 
 # ── Knowledge Base ──────────────────────────────────────────────────────────────
 
