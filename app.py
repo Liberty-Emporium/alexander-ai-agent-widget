@@ -195,7 +195,8 @@ def migrate_model_names():
 
 def migrate_learned_facts():
     """Add learned_facts table for auto-extracted memory."""
-    db = get_db()
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
     try:
         db.execute('''
             CREATE TABLE IF NOT EXISTS learned_facts (
