@@ -333,7 +333,7 @@ def call_openrouter(messages, model, api_key):
                      'Content-Type': 'application/json',
                      'HTTP-Referer': 'https://ai-agent-widget-production.up.railway.app',
                      'X-Title': 'Alexander AI Agent'},
-            json={'model': model, 'messages': messages, 'max_tokens': 800},
+            json={'model': model, 'messages': messages, 'max_tokens': 1500},
             timeout=30
         )
         if r.status_code == 401:
