@@ -193,6 +193,29 @@ def migrate_model_names():
     except Exception as e:
         app.logger.error(f'Model migration error: {e}')
 
+def migrate_learned_facts():
+    """Add learned_facts table for auto-extracted memory."""
+    db = get_db()
+    try:
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS learned_facts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id   TEXT NOT NULL,
+                session_id TEXT,
+                fact       TEXT NOT NULL,
+                approved   INTEGER DEFAULT 0,
+                created    TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY(agent_id) REFERENCES agents(id)
+            )
+        ''')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_facts_agent ON learned_facts(agent_id)')
+        db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 def migrate_brain_columns():
     """Add identity_md, soul_md, memory_md columns + ensure agent_actions table."""
     try:
@@ -317,6 +340,43 @@ def normalize_model(model):
 
 migrate_model_names()
 migrate_brain_columns()
+migrate_learned_facts()
+
+
+def extract_and_store_facts(agent_id, session_id, conversation_snippet, model, api_key):
+    """Ask the LLM to extract learnable facts from a conversation and store them."""
+    try:
+        prompt = [
+            {'role': 'system', 'content': (
+                'You are a memory extraction assistant. '
+                'Read this conversation snippet and extract any NEW facts worth remembering long-term. '
+                'Examples: user name, preferences, business details, repeated questions, complaints, use cases. '
+                'Output ONLY a JSON array of short fact strings, max 5 facts. '
+                'If nothing new is worth remembering, output an empty array []. '
+                'Example output: ["User\'s name is Sarah", "Interested in the Pro plan", "Uses the widget for e-commerce"]'
+            )},
+            {'role': 'user', 'content': f'Conversation:\n{conversation_snippet[:2000]}'}
+        ]
+        result = call_openrouter(prompt, model, api_key)
+        result = result.strip()
+        if result.startswith('```'):
+            result = result.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+        import json as _json
+        facts = _json.loads(result)
+        if not isinstance(facts, list): return
+        db = get_db()
+        for fact in facts[:5]:
+            fact = str(fact).strip()
+            if len(fact) > 10:
+                db.execute(
+                    'INSERT INTO learned_facts(agent_id, session_id, fact) VALUES(?,?,?)',
+                    (agent_id, session_id, fact)
+                )
+        db.commit()
+        db.close()
+    except Exception:
+        pass  # Never crash the main chat flow
+
 
 # ── OpenRouter chat ───────────────────────────────────────────────────────────
 
@@ -950,6 +1010,25 @@ def chat(agent_id):
                 (agent_id, session_id, summary, new_count)
             )
 
+    # ── Extract learnable facts every 6 messages ──
+    if session_id and session_id != 'dashboard-test' and len(session_id) > 4:
+        total_msgs = db.execute(
+            'SELECT COUNT(*) as c FROM messages WHERE agent_id=? AND session_id=?',
+            (agent_id, session_id)
+        ).fetchone()['c']
+        if total_msgs % 6 == 0:
+            recent = db.execute(
+                'SELECT role, content FROM messages WHERE agent_id=? AND session_id=? ORDER BY ts DESC LIMIT 12',
+                (agent_id, session_id)
+            ).fetchall()
+            if recent:
+                snippet = '\n'.join(f"{m['role'].upper()}: {m['content'][:300]}" for m in reversed(recent))
+                threading.Thread(
+                    target=extract_and_store_facts,
+                    args=(agent_id, session_id, snippet, model, agent['api_key']),
+                    daemon=True
+                ).start()
+
     db.commit()
 
     response_data = {'reply': reply}
@@ -1007,6 +1086,91 @@ def agent_brain_api(agent_id):
     return jsonify({'identity_md': agent['identity_md'],
                     'soul_md':     agent['soul_md'],
                     'memory_md':   agent['memory_md']})
+
+@app.route('/agent/<agent_id>/facts', methods=['GET'])
+@login_required
+def agent_facts_list(agent_id):
+    """List auto-learned facts for an agent."""
+    db = get_db()
+    agent = db.execute('SELECT id FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    facts = db.execute(
+        'SELECT id, fact, approved, session_id, created FROM learned_facts WHERE agent_id=? ORDER BY created DESC LIMIT 100',
+        (agent_id,)
+    ).fetchall()
+    db.close()
+    return jsonify([dict(f) for f in facts])
+
+
+@app.route('/agent/<agent_id>/facts/<int:fact_id>/approve', methods=['POST'])
+@login_required
+def agent_fact_approve(agent_id, fact_id):
+    """Approve a learned fact — appends it to MEMORY.md."""
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    fact = db.execute('SELECT * FROM learned_facts WHERE id=? AND agent_id=?', (fact_id, agent_id)).fetchone()
+    if not fact:
+        return jsonify({'error': 'not found'}), 404
+    # Append to memory_md
+    existing = agent['memory_md'] or ''
+    from datetime import datetime as _dt
+    date_str = _dt.utcnow().strftime('%Y-%m-%d')
+    new_memory = existing.rstrip() + f'\n- [{date_str}] {fact["fact"]}'
+    db.execute('UPDATE agents SET memory_md=? WHERE id=?', (new_memory.strip(), agent_id))
+    db.execute('UPDATE learned_facts SET approved=1 WHERE id=?', (fact_id,))
+    db.commit()
+    db.close()
+    return jsonify({'ok': True, 'memory_md': new_memory.strip()})
+
+
+@app.route('/agent/<agent_id>/facts/<int:fact_id>', methods=['DELETE'])
+@login_required
+def agent_fact_delete(agent_id, fact_id):
+    """Delete a learned fact."""
+    db = get_db()
+    agent = db.execute('SELECT id FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    db.execute('DELETE FROM learned_facts WHERE id=? AND agent_id=?', (fact_id, agent_id))
+    db.commit()
+    db.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/agent/<agent_id>/facts/approve-all', methods=['POST'])
+@login_required
+def agent_facts_approve_all(agent_id):
+    """Approve all pending facts — bulk append to MEMORY.md."""
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    pending = db.execute(
+        'SELECT id, fact FROM learned_facts WHERE agent_id=? AND approved=0 ORDER BY created ASC',
+        (agent_id,)
+    ).fetchall()
+    if not pending:
+        return jsonify({'ok': True, 'added': 0})
+    existing = agent['memory_md'] or ''
+    from datetime import datetime as _dt
+    date_str = _dt.utcnow().strftime('%Y-%m-%d')
+    new_lines = '\n'.join(f'- [{date_str}] {f["fact"]}' for f in pending)
+    new_memory = existing.rstrip() + '\n' + new_lines
+    db.execute('UPDATE agents SET memory_md=? WHERE id=?', (new_memory.strip(), agent_id))
+    ids = [f['id'] for f in pending]
+    placeholders = ','.join('?' for _ in ids)
+    db.execute(f'UPDATE learned_facts SET approved=1 WHERE id IN ({placeholders})', ids)
+    db.commit()
+    db.close()
+    return jsonify({'ok': True, 'added': len(pending), 'memory_md': new_memory.strip()})
+
 
 @app.route('/agent/<agent_id>/brain/update', methods=['POST'])
 def agent_brain_update(agent_id):
