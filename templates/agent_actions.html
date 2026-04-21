@@ -351,7 +351,7 @@ async function testAction(actionId, btn) {
 
   try {
     const r = await fetch(`/agent/{{ agent.id }}/actions/${actionId}/test`, {
-      method: 'POST',
+      method: 'POST', credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({params})
     });
