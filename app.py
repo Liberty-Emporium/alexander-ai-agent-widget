@@ -193,6 +193,30 @@ def migrate_model_names():
     except Exception as e:
         app.logger.error(f'Model migration error: {e}')
 
+def migrate_chat_reports():
+    """Add chat_reports table for AI-generated conversation intelligence."""
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS chat_reports (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id   TEXT NOT NULL,
+                report_type TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                msg_count  INTEGER DEFAULT 0,
+                created    TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY(agent_id) REFERENCES agents(id)
+            )
+        ''')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_reports_agent ON chat_reports(agent_id)')
+        db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 def migrate_learned_facts():
     """Add learned_facts table for auto-extracted memory."""
     db = sqlite3.connect(DB_PATH)
@@ -342,6 +366,7 @@ def normalize_model(model):
 migrate_model_names()
 migrate_brain_columns()
 migrate_learned_facts()
+migrate_chat_reports()
 
 
 def extract_and_store_facts(agent_id, session_id, conversation_snippet, model, api_key):
@@ -1515,6 +1540,177 @@ def memory_clear(agent_id):
     return redirect(url_for('kb_page', agent_id=agent_id))
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
+
+# ── Chat Intelligence Reports ─────────────────────────────────────────────────────
+REPORT_PROMPTS = {
+    'topics': {
+        'label': 'Topic Report',
+        'icon': '📊',
+        'prompt': '''You are analyzing chat logs between an AI assistant and real users.
+Your job: extract the TOP TOPICS users are asking about.
+
+Output a JSON object with this exact structure:
+{
+  "summary": "2-sentence plain-English summary of what users want",
+  "top_topics": [
+    {"topic": "Topic name", "count": 5, "examples": ["example msg 1", "example msg 2"], "insight": "What this tells us"}
+  ],
+  "trending": "One sentence on what seems to be growing in interest",
+  "recommendation": "One actionable recommendation for the app owner"
+}
+
+Rank topics by frequency. Include up to 8 topics. Be specific, not generic.'''
+    },
+    'health': {
+        'label': 'Health Report',
+        'icon': '🚑',
+        'prompt': '''You are analyzing chat logs between an AI assistant and real users.
+Your job: find every sign of app health problems — errors, broken features, user frustration, things not working.
+
+Output a JSON object with this exact structure:
+{
+  "summary": "Overall health assessment in 2 sentences",
+  "health_score": 85,
+  "issues": [
+    {"title": "Issue name", "severity": "critical|high|medium|low", "description": "What happened", "evidence": "Direct quote or paraphrase from chat", "affected_sessions": 3}
+  ],
+  "positive_signals": ["Things that are working well based on chats"],
+  "recommendation": "Most urgent thing to fix"
+}
+
+Severity guide: critical=app broken/unusable, high=feature broken, medium=confusing/frustrating, low=minor annoyance.
+If no issues found, return empty issues array and health_score: 100.'''
+    },
+    'gaps': {
+        'label': 'Gap Report',
+        'icon': '🕳️',
+        'prompt': '''You are analyzing chat logs between an AI assistant and real users.
+Your job: find every time the AI could NOT help — said it didn\'t know, couldn\'t do something, gave a vague non-answer, or the user seemed unsatisfied with the response.
+
+Output a JSON object with this exact structure:
+{
+  "summary": "2-sentence summary of the biggest gaps",
+  "gaps": [
+    {"capability": "What the user wanted", "frequency": 3, "user_quote": "Direct quote showing the ask", "ai_failure": "What the AI said or failed to do", "fix": "How to address this — add to knowledge base, build a feature, or train the agent"}
+  ],
+  "quick_wins": ["3 things you could add to the Knowledge Base RIGHT NOW to fix common gaps"],
+  "feature_requests": ["Recurring asks that would require building new features"]
+}
+
+Be brutal. Every missed opportunity is revenue left on the table.'''
+    }
+}
+
+
+def generate_report(agent_id, report_type, model, api_key):
+    """Run LLM analysis on recent chat logs and return structured report."""
+    db = get_db()
+    # Get last 200 user messages for analysis
+    msgs = db.execute(
+        '''SELECT role, content, session_id, ts
+           FROM messages WHERE agent_id=? ORDER BY ts DESC LIMIT 200''',
+        (agent_id,)
+    ).fetchall()
+    if not msgs:
+        return {'error': 'No chat history to analyze yet.'}
+
+    # Build conversation transcript grouped by session
+    sessions = {}
+    for m in reversed(msgs):
+        sid = m['session_id'] or 'unknown'
+        if sid not in sessions:
+            sessions[sid] = []
+        sessions[sid].append(f"{m['role'].upper()}: {m['content'][:300]}")
+
+    transcript_parts = []
+    for i, (sid, exchanges) in enumerate(list(sessions.items())[:30]):
+        transcript_parts.append(f"--- Session {i+1} ---")
+        transcript_parts.extend(exchanges[:20])
+
+    transcript = '\n'.join(transcript_parts)[:8000]
+    prompt_config = REPORT_PROMPTS[report_type]
+
+    messages = [
+        {'role': 'system', 'content': prompt_config['prompt']},
+        {'role': 'user', 'content': f'Here are the chat logs to analyze:\n\n{transcript}'}
+    ]
+
+    raw = call_openrouter(messages, model, api_key)
+
+    # Strip markdown code fences if present
+    clean = raw.strip()
+    if clean.startswith('```'):
+        clean = clean.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+
+    try:
+        result = json.loads(clean)
+    except json.JSONDecodeError:
+        result = {'raw': raw, 'parse_error': True}
+
+    # Store report
+    db.execute(
+        'INSERT INTO chat_reports(agent_id, report_type, content, msg_count) VALUES(?,?,?,?)',
+        (agent_id, report_type, json.dumps(result), len(msgs))
+    )
+    db.commit()
+    return result
+
+
+@app.route('/agent/<agent_id>/reports')
+@login_required
+def agent_reports(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        flash('Agent not found.', 'error')
+        return redirect(url_for('dashboard'))
+    # Get latest of each report type
+    latest = {}
+    for rtype in REPORT_PROMPTS:
+        row = db.execute(
+            'SELECT * FROM chat_reports WHERE agent_id=? AND report_type=? ORDER BY created DESC LIMIT 1',
+            (agent_id, rtype)
+        ).fetchone()
+        if row:
+            latest[rtype] = dict(row)
+            latest[rtype]['data'] = json.loads(row['content'])
+    msg_count = db.execute('SELECT COUNT(*) as c FROM messages WHERE agent_id=?', (agent_id,)).fetchone()['c']
+    return render_template('agent_reports.html', agent=agent, latest=latest,
+                           report_types=REPORT_PROMPTS, msg_count=msg_count)
+
+
+@app.route('/api/agent/<agent_id>/reports/generate', methods=['POST'])
+@login_required
+def api_generate_report(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT * FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    data = request.get_json() or {}
+    report_type = data.get('type', 'topics')
+    if report_type not in REPORT_PROMPTS:
+        return jsonify({'error': f'Unknown report type: {report_type}'}), 400
+    model = agent['model'] or 'openai/gpt-4o-mini'
+    result = generate_report(agent_id, report_type, model, agent['api_key'])
+    return jsonify({'ok': True, 'type': report_type, 'data': result})
+
+
+@app.route('/api/agent/<agent_id>/reports/history')
+@login_required
+def api_reports_history(agent_id):
+    db = get_db()
+    agent = db.execute('SELECT id FROM agents WHERE id=? AND user_id=?',
+                       (agent_id, session['user_id'])).fetchone()
+    if not agent:
+        return jsonify({'error': 'not found'}), 404
+    rows = db.execute(
+        'SELECT id, report_type, msg_count, created FROM chat_reports WHERE agent_id=? ORDER BY created DESC LIMIT 50',
+        (agent_id,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
 
 @app.route('/agent/<agent_id>/analytics')
 @login_required

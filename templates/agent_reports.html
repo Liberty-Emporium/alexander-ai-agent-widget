@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}Chat Intelligence — {{ agent.name }}{% endblock %}
+{% block extra_css %}
+<style>
+  .report-tabs { display:flex; gap:6px; margin-bottom:1.5rem; flex-wrap:wrap; }
+  .report-tab {
+    padding:9px 20px; border-radius:8px; font-size:.85rem; font-weight:600;
+    cursor:pointer; border:1.5px solid rgba(255,255,255,.1);
+    background:transparent; color:#9ca3af; transition:all .15s; font-family:'Inter',sans-serif;
+    display:flex; align-items:center; gap:6px;
+  }
+  .report-tab.active { background:#6366f1; border-color:#6366f1; color:#fff; }
+  .report-tab:hover:not(.active) { border-color:#6366f1; color:#fff; }
+  .report-tab .badge {
+    font-size:.65rem; background:rgba(255,255,255,.15); padding:1px 7px;
+    border-radius:20px; font-weight:700;
+  }
+
+  .report-panel { display:none; }
+  .report-panel.active { display:block; }
+
+  /* Stat bar */
+  .stat-bar { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-bottom:1.5rem; }
+  .stat-tile { background:#111827; border:1px solid rgba(255,255,255,.07); border-radius:10px; padding:14px 16px; }
+  .stat-num { font-size:1.6rem; font-weight:800; color:#6366f1; }
+  .stat-num.green { color:#10b981; }
+  .stat-num.red { color:#ef4444; }
+  .stat-num.yellow { color:#f59e0b; }
+  .stat-label { font-size:.75rem; color:#6b7280; margin-top:2px; }
+
+  /* Cards */
+  .r-card {
+    background:#111827; border:1px solid rgba(255,255,255,.07);
+    border-radius:12px; padding:18px 20px; margin-bottom:12px;
+  }
+  .r-card-title { font-weight:700; font-size:.92rem; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+  .r-card-body { font-size:.84rem; color:#9ca3af; line-height:1.7; }
+  .r-card-body strong { color:#e2e8f0; }
+
+  /* Severity badges */
+  .sev { display:inline-block; padding:2px 10px; border-radius:20px; font-size:.7rem; font-weight:700; text-transform:uppercase; }
+  .sev-critical { background:rgba(239,68,68,.15); color:#ef4444; border:1px solid rgba(239,68,68,.3); }
+  .sev-high     { background:rgba(245,158,11,.12); color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
+  .sev-medium   { background:rgba(99,102,241,.12); color:#818cf8; border:1px solid rgba(99,102,241,.3); }
+  .sev-low      { background:rgba(156,163,175,.1); color:#6b7280; border:1px solid rgba(156,163,175,.2); }
+
+  /* Topic bar */
+  .topic-bar { height:6px; background:rgba(99,102,241,.15); border-radius:3px; margin:6px 0; overflow:hidden; }
+  .topic-fill { height:100%; background:linear-gradient(90deg,#6366f1,#a78bfa); border-radius:3px; }
+
+  /* Quote */
+  blockquote { border-left:3px solid #6366f1; padding:6px 12px; margin:8px 0; color:#9ca3af; font-style:italic; font-size:.83rem; background:rgba(99,102,241,.05); border-radius:0 6px 6px 0; }
+
+  /* Generate button */
+  .gen-btn {
+    display:inline-flex; align-items:center; gap:8px; padding:10px 22px;
+    background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
+    border:none; border-radius:8px; font-size:.88rem; font-weight:700;
+    cursor:pointer; transition:all .2s; font-family:'Inter',sans-serif;
+  }
+  .gen-btn:hover { opacity:.88; transform:translateY(-1px); }
+  .gen-btn:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+
+  /* Spinner */
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  /* Empty */
+  .empty-report { text-align:center; padding:48px 20px; color:#4b5563; }
+  .empty-icon { font-size:2.5rem; margin-bottom:12px; }
+
+  /* Last run */
+  .last-run { font-size:.75rem; color:#4b5563; }
+
+  /* Quick wins */
+  .qw-list { list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .qw-list li { display:flex; align-items:flex-start; gap:8px; font-size:.84rem; color:#d1d5db; }
+  .qw-list li::before { content:'✅'; flex-shrink:0; }
+
+  /* Health score ring */
+  .health-ring { display:inline-flex; align-items:center; gap:12px; padding:12px 20px; background:#0d1117; border-radius:12px; border:1px solid rgba(255,255,255,.08); margin-bottom:1rem; }
+  .ring-score { font-size:2.4rem; font-weight:900; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:860px;padding-top:2rem;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:1.5rem;">
+    <div>
+      <a href="/agent/{{ agent.id }}" style="color:#6b7280;font-size:.88rem;">← Back to {{ agent.name }}</a>
+      <h1 style="font-size:1.4rem;font-weight:800;margin-top:.6rem;">🧠 Chat Intelligence</h1>
+      <p style="color:#6b7280;font-size:.85rem;margin-top:4px;">
+        AI-powered analysis of your {{ msg_count }} chat messages — topics, health signals, and capability gaps.
+      </p>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:1.8rem;font-weight:800;color:#6366f1;">{{ msg_count }}</div>
+      <div style="font-size:.75rem;color:#6b7280;">messages analyzed</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="report-tabs">
+    <button type="button" class="report-tab active" onclick="showReport('topics')" id="tab-topics">
+      📊 Topic Report
+      {% if latest.topics %}<span class="badge">✓</span>{% endif %}
+    </button>
+    <button type="button" class="report-tab" onclick="showReport('health')" id="tab-health">
+      🚨 Health Report
+      {% if latest.health %}<span class="badge">✓</span>{% endif %}
+    </button>
+    <button type="button" class="report-tab" onclick="showReport('gaps')" id="tab-gaps">
+      🕳️ Gap Report
+      {% if latest.gaps %}<span class="badge">✓</span>{% endif %}
+    </button>
+  </div>
+
+  <!-- ── TOPIC REPORT ── -->
+  <div class="report-panel active" id="panel-topics">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px;">
+      <div>
+        <strong style="font-size:1rem;">📊 What are users asking about?</strong>
+        {% if latest.topics %}
+        <div class="last-run">Last generated: {{ latest.topics.created }}</div>
+        {% endif %}
+      </div>
+      <button class="gen-btn" onclick="generateReport('topics', this)">
+        ▶ Generate Report
+      </button>
+    </div>
+
+    <div id="topics-content">
+    {% if latest.topics and latest.topics.data and not latest.topics.data.get('error') %}
+      {% set d = latest.topics.data %}
+      {% if d.get('summary') %}
+      <div class="r-card" style="border-color:rgba(99,102,241,.2)">
+        <div class="r-card-body">{{ d.summary }}</div>
+      </div>
+      {% endif %}
+
+      {% if d.get('top_topics') %}
+      {% set max_count = d.top_topics[0].count if d.top_topics else 1 %}
+      {% for t in d.top_topics %}
+      <div class="r-card">
+        <div class="r-card-title">
+          <span>{{ t.topic }}</span>
+          <span style="font-size:.78rem;color:#6366f1;margin-left:auto;font-weight:700;">{{ t.count }} mentions</span>
+        </div>
+        <div class="topic-bar"><div class="topic-fill" style="width:{{ [((t.count / max_count) * 100)|int, 100]|min }}%"></div></div>
+        {% if t.get('insight') %}<div class="r-card-body" style="margin-top:6px">{{ t.insight }}</div>{% endif %}
+        {% if t.get('examples') %}
+        <div style="margin-top:8px">
+          {% for ex in t.examples[:2] %}
+          <blockquote>{{ ex }}</blockquote>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      {% if d.get('trending') %}
+      <div class="r-card" style="border-color:rgba(245,158,11,.2)">
+        <div class="r-card-title">📈 Trending</div>
+        <div class="r-card-body">{{ d.trending }}</div>
+      </div>
+      {% endif %}
+      {% if d.get('recommendation') %}
+      <div class="r-card" style="border-color:rgba(16,185,129,.2)">
+        <div class="r-card-title">💡 Recommendation</div>
+        <div class="r-card-body">{{ d.recommendation }}</div>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-report">
+        <div class="empty-icon">📊</div>
+        <div style="font-weight:600;margin-bottom:6px">No topic report yet</div>
+        <div style="font-size:.84rem">Click Generate Report to analyze your chat logs</div>
+      </div>
+    {% endif %}
+    </div>
+  </div>
+
+  <!-- ── HEALTH REPORT ── -->
+  <div class="report-panel" id="panel-health">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px;">
+      <div>
+        <strong style="font-size:1rem;">🚨 App health signals from chats</strong>
+        {% if latest.health %}
+        <div class="last-run">Last generated: {{ latest.health.created }}</div>
+        {% endif %}
+      </div>
+      <button class="gen-btn" onclick="generateReport('health', this)">
+        ▶ Generate Report
+      </button>
+    </div>
+
+    <div id="health-content">
+    {% if latest.health and latest.health.data and not latest.health.data.get('error') %}
+      {% set d = latest.health.data %}
+      {% set score = d.get('health_score', 100) %}
+      <div class="health-ring">
+        <div class="ring-score" style="color:{% if score >= 80 %}#10b981{% elif score >= 60 %}#f59e0b{% else %}#ef4444{% endif %}">{{ score }}</div>
+        <div>
+          <div style="font-weight:700;font-size:.95rem">Health Score</div>
+          <div style="font-size:.78rem;color:#6b7280">Out of 100 · based on chat signals</div>
+        </div>
+      </div>
+
+      {% if d.get('summary') %}
+      <div class="r-card" style="border-color:rgba(99,102,241,.2);margin-bottom:12px">
+        <div class="r-card-body">{{ d.summary }}</div>
+      </div>
+      {% endif %}
+
+      {% if d.get('issues') %}
+        {% for issue in d.issues %}
+        <div class="r-card" style="border-color:{% if issue.severity == 'critical' %}rgba(239,68,68,.3){% elif issue.severity == 'high' %}rgba(245,158,11,.3){% else %}rgba(99,102,241,.2){% endif %}">
+          <div class="r-card-title">
+            {{ issue.title }}
+            <span class="sev sev-{{ issue.severity }}">{{ issue.severity }}</span>
+            {% if issue.get('affected_sessions') %}
+            <span style="font-size:.75rem;color:#6b7280;margin-left:auto;">{{ issue.affected_sessions }} session(s)</span>
+            {% endif %}
+          </div>
+          <div class="r-card-body">{{ issue.description }}</div>
+          {% if issue.get('evidence') %}
+          <blockquote>{{ issue.evidence }}</blockquote>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="r-card" style="border-color:rgba(16,185,129,.2)">
+          <div class="r-card-title" style="color:#10b981">✅ No issues found</div>
+          <div class="r-card-body">Chat logs show no signs of broken features or user frustration.</div>
+        </div>
+      {% endif %}
+
+      {% if d.get('positive_signals') %}
+      <div class="r-card">
+        <div class="r-card-title">✅ What's working</div>
+        <ul class="qw-list">
+          {% for p in d.positive_signals %}<li>{{ p }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if d.get('recommendation') %}
+      <div class="r-card" style="border-color:rgba(239,68,68,.2)">
+        <div class="r-card-title">🔧 Most Urgent Fix</div>
+        <div class="r-card-body">{{ d.recommendation }}</div>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-report">
+        <div class="empty-icon">🚨</div>
+        <div style="font-weight:600;margin-bottom:6px">No health report yet</div>
+        <div style="font-size:.84rem">Click Generate Report to scan chats for health signals</div>
+      </div>
+    {% endif %}
+    </div>
+  </div>
+
+  <!-- ── GAP REPORT ── -->
+  <div class="report-panel" id="panel-gaps">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px;">
+      <div>
+        <strong style="font-size:1rem;">🕳️ Where is the AI falling short?</strong>
+        {% if latest.gaps %}
+        <div class="last-run">Last generated: {{ latest.gaps.created }}</div>
+        {% endif %}
+      </div>
+      <button class="gen-btn" onclick="generateReport('gaps', this)">
+        ▶ Generate Report
+      </button>
+    </div>
+
+    <div id="gaps-content">
+    {% if latest.gaps and latest.gaps.data and not latest.gaps.data.get('error') %}
+      {% set d = latest.gaps.data %}
+      {% if d.get('summary') %}
+      <div class="r-card" style="border-color:rgba(99,102,241,.2)">
+        <div class="r-card-body">{{ d.summary }}</div>
+      </div>
+      {% endif %}
+
+      {% if d.get('gaps') %}
+        {% for gap in d.gaps %}
+        <div class="r-card">
+          <div class="r-card-title">
+            {{ gap.capability }}
+            {% if gap.get('frequency') %}
+            <span style="font-size:.75rem;color:#f59e0b;margin-left:auto;">{{ gap.frequency }}× asked</span>
+            {% endif %}
+          </div>
+          {% if gap.get('user_quote') %}<blockquote>User: "{{ gap.user_quote }}"</blockquote>{% endif %}
+          {% if gap.get('ai_failure') %}<div class="r-card-body" style="color:#ef4444;margin-bottom:6px">❌ AI: {{ gap.ai_failure }}</div>{% endif %}
+          {% if gap.get('fix') %}<div class="r-card-body" style="color:#10b981">💡 Fix: {{ gap.fix }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="r-card" style="border-color:rgba(16,185,129,.2)">
+        <div class="r-card-title" style="color:#10b981">✅ No gaps found</div>
+        <div class="r-card-body">The agent appears to be handling all user requests well.</div>
+      </div>
+      {% endif %}
+
+      {% if d.get('quick_wins') %}
+      <div class="r-card" style="border-color:rgba(16,185,129,.2)">
+        <div class="r-card-title">⚡ Quick Wins — Add to Knowledge Base NOW</div>
+        <ul class="qw-list">
+          {% for w in d.quick_wins %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if d.get('feature_requests') %}
+      <div class="r-card" style="border-color:rgba(245,158,11,.2)">
+        <div class="r-card-title">🗺️ Feature Requests from Users</div>
+        <ul class="qw-list">
+          {% for f in d.feature_requests %}<li style="color:#f59e0b">{{ f }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-report">
+        <div class="empty-icon">🕳️</div>
+        <div style="font-weight:600;margin-bottom:6px">No gap report yet</div>
+        <div style="font-size:.84rem">Click Generate Report to find where users are hitting walls</div>
+      </div>
+    {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const AGENT_ID = '{{ agent.id }}';
+
+function showReport(type) {
+  document.querySelectorAll('.report-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + type).classList.add('active');
+  document.getElementById('tab-' + type).classList.add('active');
+}
+
+async function generateReport(type, btn) {
+  const labels = {topics:'Topic Report', health:'Health Report', gaps:'Gap Report'};
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analyzing chats…';
+
+  try {
+    const res = await fetch(`/api/agent/${AGENT_ID}/reports/generate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({type})
+    });
+    const result = await res.json();
+    if (result.ok) {
+      // Reload the page to show fresh report
+      window.location.reload();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      btn.disabled = false;
+      btn.innerHTML = '▶ Generate Report';
+    }
+  } catch(e) {
+    alert('Error generating report: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '▶ Generate Report';
+  }
+}
+</script>
+{% endblock %}
