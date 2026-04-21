@@ -386,7 +386,8 @@ def build_actions_prompt(actions, agent_id, agent_api_key, base_url):
 2. VERIFY AFTER DELETING: After any delete action, immediately call list_claims (or the equivalent list action) and show the user the updated list to CONFIRM the item is actually gone.
 3. VERIFY AFTER UPDATING: After any update (status change, add room, etc.), call get_claim or get_dashboard to confirm the change was applied.
 4. NEVER REPORT SUCCESS WITHOUT CONFIRMING: Do not tell the user something is done unless you have verified it via a follow-up API call. The API response alone is not enough — always check.
-5. SHOW YOUR WORK: Tell the user exactly what ID you found, what you deleted/changed, and show the verification result.""")
+5. SHOW YOUR WORK: Tell the user exactly what ID you found, what you deleted/changed, and show the verification result.
+6. MULTIPLE ACTIONS: If the user asks for several things at once (e.g. "add 5 team members" or "create these 3 claims"), output ONE ```action``` block per item in your reply. The engine executes ALL blocks automatically. Never stop at just the first one.""")
     # Self-management API
     lines.append(f"""
 ## SELF-MANAGEMENT: You can add your OWN actions
@@ -448,7 +449,7 @@ def execute_action(action, params, agent_api_key):
         return {"ok": False, "error": str(e)}
 
 def parse_action_call(reply_text):
-    """Extract action JSON block from AI reply."""
+    """Extract FIRST action JSON block from AI reply (legacy single-action support)."""
     import re
     match = re.search(r'```action\s*\n({.*?})\s*\n```', reply_text, re.DOTALL)
     if match:
@@ -458,8 +459,21 @@ def parse_action_call(reply_text):
             pass
     return None
 
+
+def parse_all_action_calls(reply_text):
+    """Extract ALL action JSON blocks from AI reply — supports multiple actions per message."""
+    import re
+    actions = []
+    for match in re.finditer(r'```action\s*\n({.*?})\s*\n```', reply_text, re.DOTALL):
+        try:
+            actions.append(json.loads(match.group(1)))
+        except Exception:
+            pass
+    return actions
+
+
 def strip_action_block(reply_text):
-    """Remove the ```action ... ``` block from visible reply."""
+    """Remove ALL ```action ... ``` blocks from visible reply."""
     import re
     return re.sub(r'```action\s*\n.*?\n```\n?', '', reply_text, flags=re.DOTALL).strip()
 
@@ -867,21 +881,28 @@ def chat(agent_id):
 
     reply = call_openrouter(messages, model, agent['api_key'])
 
-    # ── Execute action if AI called one ──
+    # ── Execute ALL actions Willie called (supports multiple per message) ──
     action_result_text = ''
     action_was_executed = False
     action_name = ''
-    action_call = parse_action_call(reply)
-    if action_call and actions_list:
-        action_name = action_call.get('action', '')
-        params      = action_call.get('params', {})
-        matched     = next((a for a in actions_list if a['name'] == action_name), None)
-        if matched:
-            exec_result = execute_action(matched, params, agent['api_key'])
-            if exec_result.get('ok'):
-                action_result_text = f'\n\n✅ Action **{action_name}** executed successfully.'
+    action_calls = parse_all_action_calls(reply)
+    if action_calls and actions_list:
+        results = []
+        for ac in action_calls:
+            action_name = ac.get('action', '')
+            params = ac.get('params', {})
+            matched = next((a for a in actions_list if a['name'] == action_name), None)
+            if matched:
+                exec_result = execute_action(matched, params, agent['api_key'])
+                if exec_result.get('ok'):
+                    msg = exec_result.get('message', 'Done')
+                    results.append(f'✅ **{action_name}**: {msg}')
+                else:
+                    err = exec_result.get('error', exec_result.get('result', 'Unknown error'))
+                    results.append(f'⚠️ **{action_name}** failed: {err}')
             else:
-                action_result_text = f'\n\n⚠️ Action **{action_name}** failed: {exec_result.get("error", exec_result.get("result", ""))}'
+                results.append(f'❓ Unknown action: {action_name}')
+        action_result_text = '\n\n' + '\n'.join(results)
         reply = strip_action_block(reply) + action_result_text
         action_was_executed = True
 
