@@ -524,22 +524,6 @@ def analyze_photo_public():
     except Exception:
         return jsonify({'description': ''})
 
-@app.route('/internal/agent-key/<agent_id>')
-def internal_get_agent_key(agent_id):
-    """One-time internal endpoint — returns agent API key. Auth: FloodClaim Willie token."""
-    auth  = request.headers.get('Authorization', '')
-    token = auth.replace('Bearer ', '').strip()
-    # Authenticate with the known FloodClaim Willie token
-    FLOOD_TOKEN = 'S7LroZDvJSqzJZ304leqwQcxToJXRwF597gszWWarq4'
-    if token != FLOOD_TOKEN:
-        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
-    db    = get_db()
-    agent = db.execute('SELECT id, name, api_key FROM agents WHERE id=?', (agent_id,)).fetchone()
-    if not agent:
-        return jsonify({'ok': False, 'error': 'Agent not found'}), 404
-    return jsonify({'ok': True, 'agent_id': agent_id, 'name': agent['name'], 'api_key': agent['api_key']})
-
-
 @app.route('/health')
 def health():
     try:
