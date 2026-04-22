@@ -8,6 +8,7 @@
   <meta property="og:image" content="{{ request.host_url }}static/preview.png">
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{overflow-x:hidden;max-width:100%}
     body{font-family:'Inter',sans-serif;background:#0a0a0f;color:#f1f5f9;min-height:100vh;}
     a{color:inherit;text-decoration:none;}
     /* Navbar */
@@ -16,7 +17,7 @@
         display:flex;align-items:center;justify-content:space-between;backdrop-filter:blur(10px);}
     .nav-brand{font-size:1.1rem;font-weight:800;color:#6366f1;}
     .nav-brand span{color:#fff;font-weight:400;}
-    .nav-links{display:flex;align-items:center;gap:1.5rem;font-size:0.88rem;}
+    .nav-links{display:flex;align-items:center;gap:1.5rem;font-size:0.88rem;flex-wrap:wrap;}
     .nav-links a{color:#94a3b8;transition:color 0.15s;}
     .nav-links a:hover{color:#fff;}
     .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 20px;border-radius:8px;
@@ -46,10 +47,23 @@
     .eye-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);
              background:none;border:none;cursor:pointer;font-size:16px;color:#6b7280;}
     /* Container */
-    .container{max-width:1100px;margin:0 auto;padding:2rem;}
-    .container-sm{max-width:520px;margin:0 auto;padding:2rem;}
+    .container{max-width:1100px;margin:0 auto;padding:2rem;width:100%;box-sizing:border-box;}
+    .container-sm{max-width:520px;margin:0 auto;padding:2rem;width:100%;box-sizing:border-box;}
     /* Footer */
     footer{text-align:center;padding:2rem;color:#4b5563;font-size:0.82rem;border-top:1px solid rgba(255,255,255,0.06);margin-top:4rem;}
+  <style>
+    @media(max-width:768px){
+      .container,.container-sm{padding:1rem;}
+      nav{padding:0 1rem;flex-wrap:wrap;height:auto;min-height:60px;gap:.5rem;}
+      .nav-links{gap:.75rem;font-size:.82rem;}
+      table{width:100%;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      img{max-width:100%;height:auto;}
+      input,select,textarea{font-size:16px!important;}
+    }
+    @media(max-width:480px){
+      .nav-links a:not(.btn){display:none;}
+    }
+  </style>
   </style>
   {% block extra_css %}{% endblock %}
 </head>
