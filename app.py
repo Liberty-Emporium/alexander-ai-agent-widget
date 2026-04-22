@@ -2495,7 +2495,7 @@ The system will execute it and return the result. Then respond based on that res
 
     for name, desc, method, url, body in ACTIONS:
         db.execute(
-            'INSERT INTO agent_actions(agent_id, name, description, method, url, headers, body_template, enabled) VALUES(?,?,?,?,?,?,?,1)',
+            'INSERT INTO agent_actions(agent_id, name, description, method, url, headers_json, body_template, enabled) VALUES(?,?,?,?,?,?,?,1)',
             (AGENT_ID, name, desc, method, url, headers_json, body)
         )
 
