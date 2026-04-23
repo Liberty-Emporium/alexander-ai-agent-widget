@@ -2385,3 +2385,30 @@ def admin_train_chat(agent_id):
 
 if __name__ == '__main__':
     app.run(debug=False, port=5000)
+
+
+# ── Fix add_supplier body_template ───────────────────────────────────────────
+@app.route('/setup/fix-actions', methods=['GET'])
+def fix_actions():
+    AGENT_ID = 'Fx9e5L1JSpqJtjnhl2jLsQ'
+    db = get_db()
+    # For add_supplier and add_customer — body template should just pass params through
+    # The execute_action already does body.update(params) so we just need valid JSON
+    db.execute(
+        "UPDATE agent_actions SET body_template=? WHERE agent_id=? AND name=?",
+        ('{}', AGENT_ID, 'add_supplier')
+    )
+    db.execute(
+        "UPDATE agent_actions SET body_template=? WHERE agent_id=? AND name=?",
+        ('{}', AGENT_ID, 'add_customer')
+    )
+    db.execute(
+        "UPDATE agent_actions SET body_template=? WHERE agent_id=? AND name=?",
+        ('{}', AGENT_ID, 'add_order')
+    )
+    db.execute(
+        "UPDATE agent_actions SET body_template=? WHERE agent_id=? AND name=?",
+        ('{}', AGENT_ID, 'update_order_status')
+    )
+    db.commit()
+    return jsonify({'ok': True, 'message': 'Action body templates simplified — params passed through directly.'})
