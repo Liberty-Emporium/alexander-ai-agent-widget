@@ -2572,20 +2572,31 @@ def kys_pending_notification():
     notification waiting for this client.
     Query: ?client_id=user@email.com&app_name=widget
     Returns: {"pending": true, "message": "..."} or {"pending": false}
+    Falls back to any app_name if no match found for the given app_name.
     """
     client_id = (request.args.get('client_id') or '').strip()
     app_name  = (request.args.get('app_name') or '').strip()
 
-    if not client_id or not app_name:
+    if not client_id:
         return jsonify({'pending': False})
 
     db = get_db()
-    row = db.execute('''
-        SELECT id, new_key, kys_url, next_rotation
-        FROM rotation_notifications
-        WHERE app_name=? AND client_id=? AND delivered=0
-        ORDER BY created_at DESC LIMIT 1
-    ''', (app_name, client_id)).fetchone()
+    # Try exact app_name match first, then fall back to any app for this client
+    row = None
+    if app_name:
+        row = db.execute('''
+            SELECT id, new_key, kys_url, next_rotation
+            FROM rotation_notifications
+            WHERE app_name=? AND client_id=? AND delivered=0
+            ORDER BY created_at DESC LIMIT 1
+        ''', (app_name, client_id)).fetchone()
+    if not row:
+        row = db.execute('''
+            SELECT id, new_key, kys_url, next_rotation
+            FROM rotation_notifications
+            WHERE client_id=? AND delivered=0
+            ORDER BY created_at DESC LIMIT 1
+        ''', (client_id,)).fetchone()
 
     if not row:
         db.close()
