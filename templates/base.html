@@ -112,5 +112,20 @@ document.querySelectorAll('.eye-btn').forEach(function(btn){
 });
 </script>
 {% block extra_js %}{% endblock %}
+{% if session.get('email') %}
+<script>
+(function() {
+  // Store logged-in user's email for KYS rotation notifications.
+  // The widget checks localStorage for 'aai_client_id_<agent_id>' on chat open.
+  var email = {{ session['email'] | tojson }};
+  try {
+    // Set for all agents on this page
+    var keys = Object.keys(localStorage).filter(function(k){ return k.startsWith('aai_client_id_'); });
+    // Also set a global fallback the widget.js can read
+    localStorage.setItem('aai_current_user_email', email);
+  } catch(e) {}
+})();
+</script>
+{% endif %}
 </body>
 </html>

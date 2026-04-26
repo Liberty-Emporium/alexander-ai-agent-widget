@@ -395,7 +395,12 @@
 
   function checkRotationNotification() {
     var clientId = '';
-    try { clientId = localStorage.getItem(CLIENT_ID_KEY) || ''; } catch(e) {}
+    try {
+      // Check agent-specific key first, fall back to logged-in user email
+      clientId = localStorage.getItem(CLIENT_ID_KEY)
+             || localStorage.getItem('aai_current_user_email')
+             || '';
+    } catch(e) {}
     if (!clientId) return; // no client id stored — not a registered customer
     fetch(BASE_URL + '/api/kys/pending-notification?client_id=' + encodeURIComponent(clientId) + '&app_name=' + encodeURIComponent(AGENT_ID))
       .then(function(r){ return r.json(); })
