@@ -1307,7 +1307,7 @@ def agent_facts_approve_all(agent_id):
 
 @app.route('/agent/<agent_id>/brain/update', methods=['POST'])
 def agent_brain_update(agent_id):
-    """Public endpoint — lets the hosted app update memory as agent learns."""
+    """Public endpoint — lets the hosted app update brain files and identity."""
     data     = request.get_json(silent=True) or {}
     token    = data.get('token', '')
     db       = get_db()
@@ -1317,11 +1317,15 @@ def agent_brain_update(agent_id):
     # Verify with agent api_key as token (the app must know its own key)
     if token != agent['api_key']:
         return jsonify({'error': 'unauthorized'}), 401
-    memory_md = data.get('memory_md')
-    if memory_md is not None:
-        db.execute('UPDATE agents SET memory_md=? WHERE id=?', (memory_md.strip(), agent_id))
+    updated = []
+    for field in ['memory_md', 'identity_md', 'soul_md', 'system_prompt', 'name', 'tagline']:
+        val = data.get(field)
+        if val is not None:
+            db.execute(f'UPDATE agents SET {field}=? WHERE id=?', (val.strip() if isinstance(val, str) else val, agent_id))
+            updated.append(field)
+    if updated:
         db.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'updated': updated})
 
 
 # ── Agent Actions (CRUD) ─────────────────────────────────────────────────────
