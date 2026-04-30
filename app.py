@@ -343,6 +343,13 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
+        # Guard against stale sessions pointing to deleted/missing users
+        db = get_db()
+        user = db.execute('SELECT id FROM users WHERE id=?', (session['user_id'],)).fetchone()
+        if not user:
+            session.clear()
+            flash('Session expired. Please log in again.', 'error')
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
 
@@ -822,7 +829,8 @@ def dashboard():
         'SELECT * FROM agents WHERE user_id=? ORDER BY created DESC',
         (session['user_id'],)
     ).fetchall()
-    plan = db.execute('SELECT plan FROM users WHERE id=?', (session['user_id'],)).fetchone()['plan']
+    plan_row = db.execute('SELECT plan FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    plan = plan_row['plan'] if plan_row else 'free'
     return render_template('dashboard.html', agents=agents, plan=plan)
 
 # ── Agent CRUD ────────────────────────────────────────────────────────────────
@@ -831,7 +839,8 @@ def dashboard():
 @login_required
 def new_agent():
     db = get_db()
-    plan = db.execute('SELECT plan FROM users WHERE id=?', (session['user_id'],)).fetchone()['plan']
+    plan_row = db.execute('SELECT plan FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    plan = plan_row['plan'] if plan_row else 'free'
     agent_count = db.execute('SELECT COUNT(*) FROM agents WHERE user_id=?', (session['user_id'],)).fetchone()[0]
 
     if plan == 'free' and agent_count >= 1:
