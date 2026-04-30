@@ -97,7 +97,7 @@
         <a href="/agent/{{ a.id }}/analytics" class="btn btn-outline btn-sm">Analytics</a>
         <a href="/preview/{{ a.id }}" class="btn btn-outline btn-sm" target="_blank">Preview</a>
         <form method="POST" action="/agent/{{ a.id }}/delete" style="margin:0;"
-              onsubmit="return confirm('Delete \'{{ a.name | e }}\' permanently? This cannot be undone.')">
+              onsubmit="return confirm('Delete this agent permanently? This cannot be undone.')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-sm"
                   style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);">🗑 Delete</button>
