@@ -117,10 +117,12 @@
 </div>
 {% endblock %}
 {% block extra_js %}
-<!-- Echo Brain widget — always available on the dashboard -->
+{% if echo_agent_id %}
+<!-- Echo Brain widget — loaded dynamically, survives agent ID changes -->
 <script
-  src="https://ai-agent-widget-production.up.railway.app/widget/17fU9W9j0EWDEXSCqUUsow.js"
+  src="https://ai-agent-widget-production.up.railway.app/widget/{{ echo_agent_id }}.js"
   async
   defer>
 </script>
+{% endif %}
 {% endblock %}

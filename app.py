@@ -831,7 +831,13 @@ def dashboard():
     ).fetchall()
     plan_row = db.execute('SELECT plan FROM users WHERE id=?', (session['user_id'],)).fetchone()
     plan = plan_row['plan'] if plan_row else 'free'
-    return render_template('dashboard.html', agents=agents, plan=plan)
+    # Dynamically resolve Echo Brain agent ID for the dashboard widget
+    echo_agent = db.execute(
+        "SELECT id FROM agents WHERE user_id=? AND name='Echo Brain'",
+        (session['user_id'],)
+    ).fetchone()
+    echo_agent_id = echo_agent['id'] if echo_agent else None
+    return render_template('dashboard.html', agents=agents, plan=plan, echo_agent_id=echo_agent_id)
 
 # ── Agent CRUD ────────────────────────────────────────────────────────────────
 
