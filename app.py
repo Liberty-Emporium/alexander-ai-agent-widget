@@ -5,41 +5,19 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, g)
 import stripe
 
-# ── KYS Integration — fetch secrets from Keep Your Secrets ───────────────────
+# ── Secrets — env vars only (KYS removed) ───────────────────────────────────
 def fetch_from_kys(key_name):
-    """Fetch a secret value from Keep Your Secrets (KYS) API."""
-    kys_token = os.environ.get('KYS_API_TOKEN', '')
-    kys_url   = os.environ.get('KYS_URL', 'https://ai-api-tracker-production.up.railway.app')
-    if not kys_token:
-        return None
-    try:
-        payload = json.dumps({'key': key_name}).encode()
-        req = urllib.request.Request(
-            f'{kys_url}/api/fetch-key',
-            data=payload,
-            headers={'Authorization': f'Bearer {kys_token}',
-                     'Content-Type': 'application/json'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-            if data.get('ok'):
-                # single key
-                return data.get('value') or data.get('secret') or None
-    except Exception:
-        pass
+    """KYS removed — always returns None."""
     return None
 
 def get_env_or_kys(env_var, kys_key):
-    """Return env var if set, otherwise fetch from KYS."""
-    val = os.environ.get(env_var, '')
-    if val:
-        return val
-    return fetch_from_kys(kys_key) or ''
+    """Return env var if set, otherwise return empty string."""
+    return os.environ.get(env_var, '') or ''
 
-# Load Stripe secrets — env var first, fall back to KYS
-stripe.api_key   = get_env_or_kys('STRIPE_SECRET_KEY', 'stripe_secret')
-STRIPE_PK        = get_env_or_kys('STRIPE_PUBLISHABLE_KEY', 'stripe_publishable')
-STRIPE_WH_SECRET = get_env_or_kys('STRIPE_WEBHOOK_SECRET', 'stripe_webhook')
+# Load Stripe secrets — env vars only
+stripe.api_key   = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_PK        = os.environ.get('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_WH_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 
 # Price IDs — set these as Railway env vars after creating products in Stripe
 STRIPE_PRICE_PRO      = os.environ.get('STRIPE_PRICE_PRO', '')       # $19/mo
@@ -472,7 +450,7 @@ import requests as _req
 def call_openrouter(messages, model, api_key):
     # If no key provided, fall back to KYS
     if not api_key:
-        api_key = fetch_from_kys('openrouter') or ''
+        api_key = ''
     try:
         r = _req.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -1945,7 +1923,7 @@ def seed_echo_agent():
             db.commit()
             db.close()
             return
-        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', '')) or fetch_from_kys('openrouter') or ''
+        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', ''))
         agent_id = secrets.token_urlsafe(16)
         db.execute('''
             INSERT INTO agents
@@ -1995,7 +1973,7 @@ def seed_cakely_agent():
         if existing:
             db.close()
             return
-        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', '')) or fetch_from_kys('openrouter') or ''
+        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', ''))
         import secrets as _s
         agent_id = _s.token_urlsafe(16)
         db.execute('''
@@ -2062,7 +2040,7 @@ def seed_alexander_ai_voice_agent():
             app.logger.info(f'Alexander AI Voice agent updated: {agent_id}')
             db.close()
             return
-        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', '')) or fetch_from_kys('openrouter') or ''
+        api_key = os.environ.get('OPENROUTER_API_KEY', os.environ.get('ECHO_API_KEY', ''))
         agent_id = 'alexander-ai-voice'
         # Check if this specific ID is taken
         if db.execute('SELECT id FROM agents WHERE id=?', (agent_id,)).fetchone():
