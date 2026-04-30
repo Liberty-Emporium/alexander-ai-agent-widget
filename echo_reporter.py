@@ -36,6 +36,8 @@ def _post(endpoint, payload):
             },
             method='POST'
         )
+        if not (ECDASH_URL or '').startswith('https://'):
+            return
         with urllib.request.urlopen(req, timeout=4):
             pass
     except Exception:
@@ -77,10 +79,14 @@ def install_reporter(flask_app, app_name):
     3. Starts a background thread that sends a health ping every PING_INTERVAL seconds
     """
 
-    # 1. Catch all unhandled exceptions
+    # 1. Catch all unhandled exceptions (5xx only — skip 4xx noise)
     @flask_app.errorhandler(Exception)
     def _handle_exception(e):
-        from flask import request as freq, jsonify
+        from flask import request as freq
+        from werkzeug.exceptions import HTTPException
+        # Don't report 4xx client errors (404, 410, etc.) — they're not real errors
+        if isinstance(e, HTTPException) and e.code < 500:
+            raise e
         report_error(
             app_name,
             error=e,

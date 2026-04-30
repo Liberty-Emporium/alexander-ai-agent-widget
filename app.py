@@ -1,5 +1,12 @@
 import os, sqlite3, secrets, hashlib, json, time, threading, datetime
 import urllib.request, urllib.error
+
+# ── Safe URL helper — only allow https:// (blocks file://, ftp://, SSRF) ────
+def _safe_urlopen(req_or_url, timeout=10):
+    url = req_or_url if isinstance(req_or_url, str) else req_or_url.full_url
+    if not url.startswith('https://'):
+        raise ValueError(f'Blocked non-https URL: {url}')
+    return urllib.request.urlopen(req_or_url, timeout=timeout)
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, g)
@@ -1156,7 +1163,7 @@ def _push_brain_to_ecdash(identity_md, soul_md, memory_md):
             },
             method='POST'
         )
-        with urllib.request.urlopen(req, timeout=5): pass
+        with _safe_urlopen(req, timeout=5): pass
     except Exception:
         pass  # Never block the user -- sync is best-effort
 
@@ -1545,7 +1552,7 @@ def kb_add(agent_id):
                 url,
                 headers={'User-Agent': 'Mozilla/5.0 (compatible; AlexanderAI-KB-Scraper/1.0)'}
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _safe_urlopen(req, timeout=10) as resp:
                 raw = resp.read()
             # Simple HTML stripping
             import re
